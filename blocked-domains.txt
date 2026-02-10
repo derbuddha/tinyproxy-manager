@@ -1,0 +1,7 @@
+# Blockierte Domains - eine pro Zeile
+# Regex-Patterns werden unterstützt
+# Beispiele:
+# ^.*facebook\.com$
+# ^.*twitter\.com$
+# ^.*tiktok\.com$
+# ^.*instagram\.com$
