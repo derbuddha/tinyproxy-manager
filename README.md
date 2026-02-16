@@ -1,52 +1,52 @@
-# Tinyproxy Manager - Docker Stack für Dockge
+# Tinyproxy Manager - Docker Stack for Dockge
 
-Ein einfacher HTTP-Proxy mit Web-GUI zum Blockieren von Domains via Regex-Patterns.
+A simple HTTP proxy with web GUI for blocking domains via regex patterns.
 
 ## Features
 
-- ✅ Web-GUI zum einfachen Verwalten blockierter Domains
-- ✅ Regex-Pattern-Support für flexible Domain-Filterung
-- ✅ **Upstream Proxy Support** - Verkette mehrere Proxies (Proxy-Chaining)
-- ✅ **NoProxy (Direkte Verbindungen)** - Umgehe den Upstream-Proxy für bestimmte Domains/IPs
-- ✅ Traffic Kill-Switch zum sofortigen Stoppen aller Anfragen
-- ✅ Live-Traffic Monitor mit Auto-Refresh
-- ✅ Tinyproxy als leichtgewichtiger HTTP-Proxy
-- ✅ Vollständig containerisiert mit Docker Compose
-- ✅ Bereit für Dockge Stack-Deployment
+- ✅ Web GUI for easy management of blocked domains
+- ✅ Regex pattern support for flexible domain filtering
+- ✅ **Upstream Proxy Support** - Chain multiple proxies (Proxy Chaining)
+- ✅ **NoProxy (Direct Connections)** - Bypass the upstream proxy for specific domains/IPs
+- ✅ Traffic kill-switch for immediately stopping all requests
+- ✅ Live traffic monitor with auto-refresh
+- ✅ Tinyproxy as lightweight HTTP proxy
+- ✅ Fully containerized with Docker Compose
+- ✅ Ready for Dockge stack deployment
 
 ## Ports
 
-- **8888**: Tinyproxy HTTP-Proxy
-- **8080**: Web-GUI
+- **8888**: Tinyproxy HTTP Proxy
+- **8080**: Web GUI
 
 ## Installation in Dockge
 
-1. Entpacke das Archiv in deinen Dockge Stacks-Ordner:
+1. Extract the archive to your Dockge stacks folder:
    ```bash
    cd /opt/dockge/stacks
    tar -xzf tinyproxy-manager.tar.gz
    cd tinyproxy-manager
    ```
 
-2. Starte den Stack über die Dockge Web-UI oder via CLI:
+2. Start the stack via Dockge Web UI or CLI:
    ```bash
    docker-compose up -d
    ```
 
-3. Öffne die Web-GUI: `http://localhost:8080`
+3. Open the Web GUI: `http://localhost:8080`
 
-## Verwendung
+## Usage
 
-### Web-GUI
-- Öffne `http://localhost:8080`
-- Füge Domains zum Blocken hinzu (Regex-Patterns unterstützt)
-- Nach Änderungen Tinyproxy neustarten: `docker-compose restart tinyproxy`
+### Web GUI
+- Open `http://localhost:8080`
+- Add domains to block (regex patterns supported)
+- After changes, restart Tinyproxy: `docker-compose restart tinyproxy`
 
-### Proxy nutzen
+### Using the Proxy
 
 **Browser (Firefox)**:
-- Einstellungen → Netzwerk → Verbindungs-Einstellungen
-- Manuelle Proxy-Konfiguration: `localhost:8888`
+- Settings → Network → Connection Settings
+- Manual proxy configuration: `localhost:8888`
 
 **Terminal**:
 ```bash
@@ -59,128 +59,128 @@ export http_proxy=http://localhost:8888
 export https_proxy=http://localhost:8888
 ```
 
-## Upstream Proxy (Proxy-Chaining)
+## Upstream Proxy (Proxy Chaining)
 
-Du kannst Tinyproxy so konfigurieren, dass er **alle** Anfragen an einen weiteren Proxy weiterleitet:
+You can configure Tinyproxy to forward **all** requests to another proxy:
 
-### Über die Web-GUI konfigurieren
-1. Öffne `http://localhost:8080`
-2. Scrolle zu **"Upstream Proxy (Proxy-Weiterleitung)"**
-3. Aktiviere den Upstream Proxy
-4. Gib Host und Port des zweiten Proxies ein
-5. Klicke "Speichern" und starte Tinyproxy neu
+### Configure via Web GUI
+1. Open `http://localhost:8080`
+2. Scroll to **"Upstream Proxy (Proxy Forwarding)"**
+3. Enable the upstream proxy
+4. Enter host and port of the second proxy
+5. Click "Save" and restart Tinyproxy
 
-### NoProxy - Direkte Verbindungen
+### NoProxy - Direct Connections
 
-Mit **NoProxy** kannst du bestimmte Domains/IPs vom Upstream-Proxy **ausnehmen**. Diese Anfragen gehen dann **direkt** ins Internet, ohne über den zweiten Proxy zu laufen.
+With **NoProxy** you can exclude specific domains/IPs from the upstream proxy. These requests will go **directly** to the internet without passing through the second proxy.
 
-**Beispiele für NoProxy-Einträge:**
-- `localhost` - Lokale Anfragen direkt
-- `192.168.0.0/16` - Privates Netzwerk direkt
-- `10.0.0.0/8` - Internes Netzwerk direkt
-- `.local` - Alle .local Domains direkt
-- `internal.company.com` - Spezifische interne Domain
+**Examples for NoProxy entries:**
+- `localhost` - Local requests direct
+- `192.168.0.0/16` - Private network direct
+- `10.0.0.0/8` - Internal network direct
+- `.local` - All .local domains direct
+- `internal.company.com` - Specific internal domain
 
 **Use Case:** 
 - Upstream Proxy: `corporate-proxy.example.com:3128`
 - NoProxy: `192.168.0.0/16`, `10.0.0.0/8`
-- **Resultat:** Externe Anfragen gehen durch den Corporate Proxy, interne Anfragen (LAN) gehen direkt
+- **Result:** External requests go through the corporate proxy, internal requests (LAN) go direct
 
-### Manuelle Konfiguration in tinyproxy.conf
+### Manual Configuration in tinyproxy.conf
 ```conf
-# Alle Anfragen über zweiten Proxy leiten
+# Forward all requests through second proxy
 Upstream http proxy.example.com:3128 "."
 
-# Ausnahmen für direkte Verbindungen
+# Exceptions for direct connections
 No localhost
 No 192.168.0.0/16
 No 10.0.0.0/8
 No .local
 ```
 
-## Regex-Pattern Beispiele
+## Regex Pattern Examples
 
 ```
-# Alle Subdomains von facebook.com blockieren
+# Block all subdomains of facebook.com
 ^.*facebook\.com$
 
-# Exakt nur facebook.com (keine Subdomains)
+# Exact match only facebook.com (no subdomains)
 ^facebook\.com$
 
-# Alle Domains mit "ads" im Namen
+# All domains with "ads" in the name
 ^.*\.ads\..*$
 
-# Mehrere spezifische Domains
+# Multiple specific domains
 ^.*(facebook|twitter|instagram)\.com$
 ```
 
-## Konfiguration anpassen
+## Customizing Configuration
 
-### Tinyproxy Konfiguration
-Bearbeite `tinyproxy.conf` für erweiterte Einstellungen:
-- Port ändern
-- Zugriffsbeschränkungen (Allow/Deny)
-- Logging-Level
-- Timeout-Werte
+### Tinyproxy Configuration
+Edit `tinyproxy.conf` for advanced settings:
+- Change port
+- Access restrictions (Allow/Deny)
+- Logging level
+- Timeout values
 
-### Sicherheit für Production
-In `tinyproxy.conf` die Zeile ändern:
+### Security for Production
+Change the line in `tinyproxy.conf`:
 ```conf
-# Statt:
+# Instead of:
 Allow 0.0.0.0/0
 
-# Besser (nur lokales Netzwerk):
+# Better (local network only):
 Allow 192.168.0.0/16
 Allow 10.0.0.0/8
 ```
 
 ## Troubleshooting
 
-**Proxy funktioniert nicht:**
+**Proxy not working:**
 ```bash
-# Logs prüfen
+# Check logs
 docker-compose logs tinyproxy
 
-# Container neustarten
+# Restart container
 docker-compose restart tinyproxy
 ```
 
-**GUI zeigt Domains nicht an:**
+**GUI doesn't show domains:**
 ```bash
-# Berechtigungen prüfen
+# Check permissions
 ls -la blocked-domains.txt
 
-# Sollte lesbar sein
+# Should be readable
 chmod 644 blocked-domains.txt
 ```
 
-**Domain wird nicht blockiert:**
-- Regex-Pattern überprüfen
-- Nach Änderungen IMMER Tinyproxy neustarten
-- Pattern in `blocked-domains.txt` direkt testen
+**Domain not being blocked:**
+- Check regex pattern
+- ALWAYS restart Tinyproxy after changes
+- Test pattern in `blocked-domains.txt` directly
 
-## Dateistruktur
+## File Structure
 
 ```
 tinyproxy-manager/
-├── docker-compose.yml       # Stack-Definition
-├── tinyproxy.conf          # Proxy-Konfiguration
-├── blocked-domains.txt     # Blocklist (Regex)
+├── docker-compose.yml       # Stack definition
+├── tinyproxy.conf          # Proxy configuration
+├── blocked-domains.txt     # Blocklist (regex)
 ├── gui/
-│   ├── Dockerfile          # GUI-Container Build
-│   ├── index.php           # Web-Interface
-│   ├── api.php             # Backend-API
+│   ├── Dockerfile          # GUI container build
+│   ├── index.php           # Web interface
+│   ├── api.php             # Backend API
 │   └── style.css           # Styling
-└── README.md               # Diese Datei
+└── README.md               # This file
 ```
 
-## Sicherheit & Datenschutz
+## Security & Privacy
 
-- Proxy läuft komplett on-premises
-- Keine externen Cloud-Dependencies
-- Alle Daten bleiben im eigenen Netzwerk
-- Filter-Logs in `/var/log/tinyproxy/` (im Container)
+- Proxy runs completely on-premises
+- No external cloud dependencies
+- All data stays in your own network
+- Filter logs in `/var/log/tinyproxy/` (in container)
 
-## Lizenz
+## License
 
-MIT License - Frei verwendbar für private und kommerzielle Zwecke.
+MIT License - Free to use for private and commercial purposes.

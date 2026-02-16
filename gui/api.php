@@ -155,14 +155,14 @@ function getUpstream() {
     $port = '';
     $noproxy = [];
     
-    if (preg_match('/^\s*Upstream\s+http\s+([^:\s]+):(\d+)/m', $content, $matches)) {
+    if (preg_match('/^\s*Upstream\s+([^:\s]+):(\d+)/m', $content, $matches)) {
         $enabled = true;
         $host = $matches[1];
         $port = $matches[2];
     }
     
-    // Extract No (noproxy) entries
-    if (preg_match_all('/^\s*No\s+(.+)$/m', $content, $matches)) {
+    // Extract no upstream (noproxy) entries
+    if (preg_match_all('/^\s*no\s+upstream\s+"?([^"\n]+)"?$/mi', $content, $matches)) {
         $noproxy = array_map('trim', $matches[1]);
     }
     
@@ -206,9 +206,9 @@ function setUpstream($enabled, $host, $port, $noproxy = null) {
             continue;
         }
         
-        // If we're in upstream section, skip Upstream and No directives
+        // If we're in upstream section, skip Upstream and no upstream directives
         if ($inUpstreamSection) {
-            if (preg_match('/^\s*(#\s*)?(Upstream\s+http\s+\S+:\d+|No\s+.+)/', $line)) {
+            if (preg_match('/^\s*(#\s*)?(Upstream\s+(http\s+)?\S+:\d+|no\s+upstream\s+.+)/i', $line)) {
                 continue;
             }
             // Exit upstream section when we hit a blank line followed by non-comment
@@ -225,27 +225,29 @@ function setUpstream($enabled, $host, $port, $noproxy = null) {
     
     $upstreamBlock = '';
     if ($enabled) {
-        $upstreamBlock = "Upstream http " . $host . ":" . $port . " \".\"";
+        $upstreamBlock = "Upstream " . $host . ":" . $port;
         
         // Add noproxy entries if provided
         if ($noproxy !== null && is_array($noproxy)) {
+            $upstreamBlock .= "\n# no upstream proxy for internal websites and unqualified hosts";
             foreach ($noproxy as $entry) {
                 $entry = trim($entry);
                 if (!empty($entry)) {
-                    $upstreamBlock .= "\nNo " . $entry;
+                    $upstreamBlock .= "\nno upstream \"" . $entry . "\"";
                 }
             }
         }
     } else {
-        $upstreamBlock = "# Upstream http proxy.example.com:3128 \".\"";
+        $upstreamBlock = "# Upstream proxy.example.com:3128";
     }
     
-    $upstreamBlock .= "\n# No proxy example: No localhost\n# No 192.168.0.0/16";
+    $upstreamBlock .= "\n# No proxy example: no upstream \".internal.example.com\"\n# No 192.168.0.0/16";
     
-    // Replace the upstream section marker
+    // Replace the upstream section marker - find and replace everything after "# Managed by the Tinyproxy GUI"
+    // until we hit an empty line or end of upstream section
     $content = preg_replace(
-        '/(# Managed by the Tinyproxy GUI)\n(# No proxy example.*\n# No.*)?/s',
-        "$1\n" . $upstreamBlock . "\n",
+        '/(# Managed by the Tinyproxy GUI\n)(?:.*?\n)*?((?=\n\n)|(?=\n[A-Z])|$)/s',
+        "$1" . $upstreamBlock . "\n",
         $content
     );
     
@@ -282,7 +284,24 @@ function addNoproxy($entry) {
     $noproxy = $current['noproxy'];
     $noproxy[] = $entry;
     
-    return setUpstream(true, $current['host'], $current['port'], $noproxy);
+    $result = setUpstream(true, $current['host'], $current['port'], $noproxy);
+    
+    // Try to restart tinyproxy container
+    if ($result['success']) {
+        $output = [];
+        $exitCode = 1;
+        @exec('docker restart tinyproxy 2>&1', $output, $exitCode);
+        
+        if ($exitCode === 0) {
+            $result['message'] = 'NoProxy entry added and Tinyproxy restarted successfully!';
+            $result['restart'] = true;
+        } else {
+            $result['message'] = 'NoProxy entry added. Please restart Tinyproxy manually!';
+            $result['restart'] = false;
+        }
+    }
+    
+    return $result;
 }
 
 function deleteNoproxy($entry) {
@@ -303,7 +322,24 @@ function deleteNoproxy($entry) {
         return ['success' => false, 'message' => 'Entry not found'];
     }
     
-    return setUpstream(true, $current['host'], $current['port'], array_values($noproxy));
+    $result = setUpstream(true, $current['host'], $current['port'], array_values($noproxy));
+    
+    // Try to restart tinyproxy container
+    if ($result['success']) {
+        $output = [];
+        $exitCode = 1;
+        @exec('docker restart tinyproxy 2>&1', $output, $exitCode);
+        
+        if ($exitCode === 0) {
+            $result['message'] = 'NoProxy entry deleted and Tinyproxy restarted successfully!';
+            $result['restart'] = true;
+        } else {
+            $result['message'] = 'NoProxy entry deleted. Please restart Tinyproxy manually!';
+            $result['restart'] = false;
+        }
+    }
+    
+    return $result;
 }
 
 function getTraffic($lines = 200) {
