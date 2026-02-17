@@ -5,3 +5,4 @@
 # ^.*twitter\.com$
 # ^.*tiktok\.com$
 # ^.*instagram\.com$
+^.*github\.com$
