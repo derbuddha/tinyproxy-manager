@@ -195,6 +195,37 @@
         let refreshInterval = null;
         let domainFilters = []; // Store filtered domains
 
+        // Notification system
+        function showNotification(message, type = 'success') {
+            // Remove any existing notification
+            const existing = document.getElementById('notification-toast');
+            if (existing) {
+                existing.remove();
+            }
+
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.id = 'notification-toast';
+            notification.className = 'notification-toast notification-' + type;
+            notification.textContent = message;
+            
+            // Add to body
+            document.body.appendChild(notification);
+            
+            // Trigger animation
+            setTimeout(() => {
+                notification.classList.add('show');
+            }, 10);
+            
+            // Auto-remove after 3 seconds
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => {
+                    notification.remove();
+                }, 300);
+            }, 3000);
+        }
+
         // Load filters from localStorage on startup
         function loadFilters() {
             const saved = localStorage.getItem('trafficDomainFilters');
@@ -330,7 +361,13 @@
                 });
                 const result = await safeJsonParse(response);
                 if (result.success) {
-                    location.reload();
+                    // Show restart notification if tinyproxy was restarted
+                    if (result.restart) {
+                        showNotification('✓ Domain deleted and Tinyproxy restarted!', 'success');
+                    } else {
+                        showNotification('✓ Domain deleted. Please restart Tinyproxy manually!', 'warning');
+                    }
+                    setTimeout(() => location.reload(), 1500);
                 } else {
                     alert('Error: ' + result.message);
                 }
@@ -356,7 +393,13 @@
                 });
                 const result = await safeJsonParse(response);
                 if (result.success) {
-                    location.reload();
+                    // Show restart notification if tinyproxy was restarted
+                    if (result.restart) {
+                        showNotification('✓ Domain added and Tinyproxy restarted!', 'success');
+                    } else {
+                        showNotification('✓ Domain added. Please restart Tinyproxy manually!', 'warning');
+                    }
+                    setTimeout(() => location.reload(), 1500);
                 } else {
                     alert('Error: ' + result.message);
                 }

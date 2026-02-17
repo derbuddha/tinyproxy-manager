@@ -68,7 +68,16 @@ function addDomain($domain) {
         return ['success' => false, 'message' => 'Error writing file'];
     }
     
-    return ['success' => true, 'message' => 'Domain added. Please restart Tinyproxy!'];
+    // Try to restart tinyproxy container
+    $output = [];
+    $exitCode = 1;
+    @exec('docker restart tinyproxy 2>&1', $output, $exitCode);
+    
+    if ($exitCode === 0) {
+        return ['success' => true, 'message' => 'Domain added and Tinyproxy restarted successfully!', 'restart' => true];
+    } else {
+        return ['success' => true, 'message' => 'Domain added. Please restart Tinyproxy manually!', 'restart' => false];
+    }
 }
 
 function deleteDomain($domain) {
@@ -100,7 +109,16 @@ function deleteDomain($domain) {
     
     file_put_contents($file, implode("\n", $newLines) . "\n", LOCK_EX);
     
-    return ['success' => true, 'message' => 'Domain deleted. Please restart Tinyproxy!'];
+    // Try to restart tinyproxy container
+    $output = [];
+    $exitCode = 1;
+    @exec('docker restart tinyproxy 2>&1', $output, $exitCode);
+    
+    if ($exitCode === 0) {
+        return ['success' => true, 'message' => 'Domain deleted and Tinyproxy restarted successfully!', 'restart' => true];
+    } else {
+        return ['success' => true, 'message' => 'Domain deleted. Please restart Tinyproxy manually!', 'restart' => false];
+    }
 }
 
 function getStats() {
