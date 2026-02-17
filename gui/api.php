@@ -100,14 +100,22 @@ function deleteDomain($domain) {
             $found = true;
             continue;
         }
-        $newLines[] = $line;
+        // Skip empty lines that were left after deletion
+        if (!empty(trim($line))) {
+            $newLines[] = $line;
+        }
     }
     
     if (!$found) {
         return ['success' => false, 'message' => 'Domain not found'];
     }
     
-    file_put_contents($file, implode("\n", $newLines) . "\n", LOCK_EX);
+    // Write file with proper formatting - preserve header comments and add single trailing newline
+    $content = '';
+    foreach ($newLines as $line) {
+        $content .= $line . "\n";
+    }
+    file_put_contents($file, $content, LOCK_EX);
     
     // Try to restart tinyproxy container
     $output = [];

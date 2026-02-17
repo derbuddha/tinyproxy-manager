@@ -12,7 +12,7 @@
         <h1>🔒 Tinyproxy Domain Manager</h1>
         
         <div class="card">
-            <h2>Blocked Domains</h2>
+            <h2 id="blocked-domains-title">Blocked Domains</h2>
             <div id="blocked-list">
                 <?php
                 $file = '/app/blocked-domains.txt';
@@ -353,6 +353,11 @@
                 return;
             }
             
+            // Show hourglass in title
+            const titleElement = document.getElementById('blocked-domains-title');
+            const originalTitle = titleElement.textContent;
+            titleElement.textContent = '⏳ Restarting Tinyproxy...';
+            
             try {
                 const response = await fetch('api.php', {
                     method: 'POST',
@@ -369,9 +374,11 @@
                     }
                     setTimeout(() => location.reload(), 1500);
                 } else {
+                    titleElement.textContent = originalTitle;
                     alert('Error: ' + result.message);
                 }
             } catch (error) {
+                titleElement.textContent = originalTitle;
                 alert('Error deleting: ' + error.message);
             }
         }
@@ -384,6 +391,11 @@
                 alert('Please enter a domain');
                 return;
             }
+            
+            // Show hourglass in title
+            const titleElement = document.getElementById('blocked-domains-title');
+            const originalTitle = titleElement.textContent;
+            titleElement.textContent = '⏳ Restarting Tinyproxy...';
             
             try {
                 const response = await fetch('api.php', {
@@ -401,9 +413,11 @@
                     }
                     setTimeout(() => location.reload(), 1500);
                 } else {
+                    titleElement.textContent = originalTitle;
                     alert('Error: ' + result.message);
                 }
             } catch (error) {
+                titleElement.textContent = originalTitle;
                 alert('Error adding: ' + error.message);
             }
         });
