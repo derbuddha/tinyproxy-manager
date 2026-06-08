@@ -1,4 +1,3 @@
-version: "3.8"
 services:
   tinyproxy:
     image: travix/tinyproxy
@@ -8,7 +7,7 @@ services:
     volumes:
       - ./tinyproxy.conf:/etc/tinyproxy.conf:ro
       - ./blocked-domains.txt:/etc/tinyproxy/blocked-domains.txt:ro
-      - tinyproxy-logs:/var/log/tinyproxy
+      - /data/tinyproxy-logs:/var/log/tinyproxy
       - /usr/share/zoneinfo:/usr/share/zoneinfo:ro
       - /etc/localtime:/etc/localtime:ro
     environment:
@@ -24,7 +23,10 @@ services:
     volumes:
       - ./blocked-domains.txt:/app/blocked-domains.txt
       - ./tinyproxy.conf:/app/tinyproxy.conf
-      - tinyproxy-logs:/var/log/tinyproxy:ro
+      - ./allowed-containers.txt:/app/allowed-containers.txt
+      - ./blocked-containers.txt:/app/blocked-containers.txt
+      - ./proxy-config.json:/app/proxy-config.json
+      - /data/tinyproxy-logs:/var/log/tinyproxy:ro
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - TINYPROXY_CONTAINER=tinyproxy

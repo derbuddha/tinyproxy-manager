@@ -427,7 +427,7 @@ function getTraffic($lines = 200) {
                     $url = $deniedMatches[1];
                     $parsedUrl = parse_url($url);
                     $domain = $parsedUrl['host'] ?? $url;
-                    
+
                     $traffic[] = [
                         'timestamp' => $timestamp,
                         'method' => 'BLOCKED',
@@ -437,6 +437,16 @@ function getTraffic($lines = 200) {
                         'level' => 'BLOCKED'
                     ];
                 }
+            }
+            else if (preg_match('/Unauthorized connection from "([^"]+)" \[([^\]]+)\]/', $message, $unauthMatches)) {
+                $traffic[] = [
+                    'timestamp' => $timestamp,
+                    'method' => 'DENIED',
+                    'url' => '',
+                    'domain' => '',
+                    'source' => $unauthMatches[1] . ' [' . $unauthMatches[2] . ']',
+                    'level' => 'UNAUTHORIZED'
+                ];
             }
         }
     }
@@ -450,6 +460,248 @@ function getTraffic($lines = 200) {
         'success' => true,
         'traffic' => $traffic,
         'count' => count($traffic)
+    ];
+}
+
+function getNetworkContainers() {
+    $output = [];
+    @exec('docker network inspect codersrv_default --format \'{{json .Containers}}\' 2>/dev/null', $output);
+    $jsonStr = implode('', $output);
+    $map = [];
+
+    if (!empty($jsonStr)) {
+        $raw = json_decode($jsonStr, true);
+        if (is_array($raw)) {
+            foreach ($raw as $id => $info) {
+                $name = $info['Name'] ?? '';
+                $ip = preg_replace('/\/\d+$/', '', $info['IPv4Address'] ?? '');
+                if (!empty($name) && !empty($ip)) {
+                    $map[$name] = $ip;
+                }
+            }
+        }
+    }
+    return $map;
+}
+
+function getAllowedContainerNames() {
+    $allowedFile = '/app/allowed-containers.txt';
+    $allowed = [];
+    if (file_exists($allowedFile)) {
+        $lines = file($allowedFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if (!empty($line) && $line[0] !== '#') {
+                $allowed[] = $line;
+            }
+        }
+    }
+    return $allowed;
+}
+
+function getBlockedContainerNames() {
+    $blockedFile = '/app/blocked-containers.txt';
+    $blocked = [];
+    if (file_exists($blockedFile)) {
+        $lines = file($blockedFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if (!empty($line) && $line[0] !== '#') {
+                $blocked[] = $line;
+            }
+        }
+    }
+    return $blocked;
+}
+
+function getCoderContainers() {
+    $networkContainers = getNetworkContainers();
+    $allowedContainers = getAllowedContainerNames();
+    $blockedContainers = getBlockedContainerNames();
+    $policy = getProxyConfig()['config']['new_client_policy'] ?? 'block';
+
+    $result = [];
+    foreach ($networkContainers as $name => $ip) {
+        if ($name === 'tinyproxy' || $name === 'tinyproxy-gui') continue;
+
+        if ($policy === 'allow') {
+            $effectiveAllowed = !in_array($name, $blockedContainers);
+        } else {
+            $effectiveAllowed = in_array($name, $allowedContainers);
+        }
+
+        $result[] = [
+            'name' => $name,
+            'ip'   => $ip,
+            'allowed' => $effectiveAllowed
+        ];
+    }
+
+    usort($result, function($a, $b) {
+        if ($a['allowed'] !== $b['allowed']) return $a['allowed'] ? 1 : -1;
+        return strcmp($a['name'], $b['name']);
+    });
+
+    return ['success' => true, 'containers' => $result, 'policy' => $policy];
+}
+
+function getProxyConfig() {
+    $configFile = '/app/proxy-config.json';
+    $defaults = ['new_client_policy' => 'block'];
+
+    if (!file_exists($configFile)) {
+        return ['success' => true, 'config' => $defaults];
+    }
+
+    $content = @file_get_contents($configFile);
+    if ($content === false) {
+        return ['success' => true, 'config' => $defaults];
+    }
+
+    $config = json_decode($content, true);
+    if (!is_array($config)) {
+        return ['success' => true, 'config' => $defaults];
+    }
+
+    return ['success' => true, 'config' => array_merge($defaults, $config)];
+}
+
+function setProxyConfig($key, $value) {
+    $configFile = '/app/proxy-config.json';
+    $allowed = ['new_client_policy' => ['allow', 'block']];
+
+    if (!array_key_exists($key, $allowed)) {
+        return ['success' => false, 'message' => 'Unknown config key'];
+    }
+
+    if (!in_array($value, $allowed[$key])) {
+        return ['success' => false, 'message' => 'Invalid value for ' . $key];
+    }
+
+    $current = getProxyConfig()['config'];
+    $current[$key] = $value;
+
+    if (@file_put_contents($configFile, json_encode($current, JSON_PRETTY_PRINT) . "\n", LOCK_EX) === false) {
+        return ['success' => false, 'message' => 'Error writing config file'];
+    }
+
+    return ['success' => true, 'message' => 'Config updated'];
+}
+
+function syncAllowRules($allowedNames = null) {
+    $configFile = '/app/tinyproxy.conf';
+
+    $proxyConfig = getProxyConfig()['config'];
+    $newClientPolicy = $proxyConfig['new_client_policy'] ?? 'block';
+
+    if ($allowedNames === null) {
+        $allowedNames = getAllowedContainerNames();
+    }
+
+    if ($newClientPolicy === 'allow') {
+        $networkContainers = getNetworkContainers();
+        $blockedNames = getBlockedContainerNames();
+        $allowLines = ['Allow 127.0.0.1'];
+        foreach ($blockedNames as $name) {
+            if (isset($networkContainers[$name])) {
+                $ip = $networkContainers[$name];
+                if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                    $allowLines[] = "Deny $ip";
+                }
+            }
+        }
+        $allowLines[] = 'Allow 0.0.0.0/0';
+    } else {
+        $networkContainers = getNetworkContainers();
+        $allowLines = ['Allow 127.0.0.1'];
+        foreach ($allowedNames as $name) {
+            if (isset($networkContainers[$name])) {
+                $ip = $networkContainers[$name];
+                if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                    $allowLines[] = "Allow $ip";
+                }
+            }
+        }
+    }
+
+    $newBlock = implode("\n", $allowLines);
+
+    $content = @file_get_contents($configFile);
+    if ($content === false) {
+        return ['success' => false, 'message' => 'Error reading tinyproxy.conf'];
+    }
+
+    if (strpos($content, '# CONTAINER_ALLOW_START') !== false) {
+        $content = preg_replace(
+            '/(# CONTAINER_ALLOW_START\n).*?(# CONTAINER_ALLOW_END)/s',
+            '$1' . $newBlock . "\n" . '$2',
+            $content
+        );
+    } else {
+        $content .= "\n# CONTAINER_ALLOW_START\n" . $newBlock . "\n# CONTAINER_ALLOW_END\n";
+    }
+
+    if (@file_put_contents($configFile, $content, LOCK_EX) === false) {
+        return ['success' => false, 'message' => 'Error writing tinyproxy.conf'];
+    }
+
+    return ['success' => true, 'message' => 'Allow rules synchronized'];
+}
+
+function setContainerAllow($containerName, $allow) {
+    $allowedFile = '/app/allowed-containers.txt';
+    $blockedFile = '/app/blocked-containers.txt';
+    $containerName = trim($containerName);
+
+    if (empty($containerName)) {
+        return ['success' => false, 'message' => 'Container name is empty'];
+    }
+
+    $allowed = getAllowedContainerNames();
+    $blocked = getBlockedContainerNames();
+
+    if ($allow) {
+        if (!in_array($containerName, $allowed)) {
+            $allowed[] = $containerName;
+        }
+        $blocked = array_values(array_filter($blocked, fn($n) => $n !== $containerName));
+    } else {
+        $allowed = array_values(array_filter($allowed, fn($n) => $n !== $containerName));
+        if (!in_array($containerName, $blocked)) {
+            $blocked[] = $containerName;
+        }
+    }
+
+    $content = "# Allowed containers for tinyproxy access\n# Managed by the Tinyproxy GUI\n";
+    foreach ($allowed as $name) {
+        $content .= $name . "\n";
+    }
+
+    if (@file_put_contents($allowedFile, $content, LOCK_EX) === false) {
+        return ['success' => false, 'message' => 'Error writing allowed containers file'];
+    }
+
+    $bcontent = "# Blocked containers (explicit denies in Allow-new mode)\n# Managed by the Tinyproxy GUI\n";
+    foreach ($blocked as $name) {
+        $bcontent .= $name . "\n";
+    }
+
+    if (@file_put_contents($blockedFile, $bcontent, LOCK_EX) === false) {
+        return ['success' => false, 'message' => 'Error writing blocked containers file'];
+    }
+
+    $updateResult = syncAllowRules($allowed);
+    if (!$updateResult['success']) return $updateResult;
+
+    $restartOutput = [];
+    $exitCode = 1;
+    @exec('docker restart tinyproxy 2>&1', $restartOutput, $exitCode);
+
+    $action = $allow ? 'allowed' : 'blocked';
+    return [
+        'success' => true,
+        'message' => "Container \"$containerName\" $action and Tinyproxy restarted!",
+        'restart' => $exitCode === 0
     ];
 }
 
@@ -609,12 +861,59 @@ switch ($action) {
         $entry = $data['entry'] ?? '';
         echo json_encode(addNoproxy($entry));
         break;
-        
+
     case 'delete_noproxy':
         $entry = $data['entry'] ?? '';
         echo json_encode(deleteNoproxy($entry));
         break;
-        
+
+    case 'get_containers':
+        echo json_encode(getCoderContainers());
+        break;
+
+    case 'set_container_allow':
+        $name  = $data['name']  ?? '';
+        $allow = $data['allow'] ?? false;
+        echo json_encode(setContainerAllow($name, (bool)$allow));
+        break;
+
+    case 'sync_allow_rules':
+        $result = syncAllowRules();
+        if ($result['success']) {
+            $restartOut = [];
+            $exitCode = 1;
+            @exec('docker restart tinyproxy 2>&1', $restartOut, $exitCode);
+            $result['restart'] = $exitCode === 0;
+            $result['message'] = $exitCode === 0
+                ? 'Allow rules synchronized and Tinyproxy restarted!'
+                : 'Allow rules synchronized. Please restart Tinyproxy manually!';
+        }
+        echo json_encode($result);
+        break;
+
+    case 'get_config':
+        echo json_encode(getProxyConfig());
+        break;
+
+    case 'set_config':
+        $key   = $data['key']   ?? '';
+        $value = $data['value'] ?? '';
+        $result = setProxyConfig($key, $value);
+        if ($result['success']) {
+            $syncResult = syncAllowRules();
+            if ($syncResult['success']) {
+                $restartOut = [];
+                $exitCode = 1;
+                @exec('docker restart tinyproxy 2>&1', $restartOut, $exitCode);
+                $result['restart'] = $exitCode === 0;
+                $result['message'] .= $exitCode === 0
+                    ? ' Tinyproxy restarted!'
+                    : ' Please restart Tinyproxy manually!';
+            }
+        }
+        echo json_encode($result);
+        break;
+
     default:
         echo json_encode(['success' => false, 'message' => 'Unknown action: ' . $action]);
 }

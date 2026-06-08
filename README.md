@@ -159,19 +159,33 @@ chmod 644 blocked-domains.txt
 - ALWAYS restart Tinyproxy after changes
 - Test pattern in `blocked-domains.txt` directly
 
+## Updating the GUI Container
+
+After making changes to GUI files (`index.php`, `api.php`, `style.css`, `entrypoint.sh`, or `Dockerfile`), rebuild and restart the container:
+
+```bash
+docker compose up -d --build tinyproxy-gui 2>&1
+```
+
+This rebuilds the image from the updated source files and recreates the container in one step. The `tinyproxy` proxy container is not affected and keeps running.
+
 ## File Structure
 
 ```
 tinyproxy-manager/
-├── docker-compose.yml       # Stack definition
-├── tinyproxy.conf          # Proxy configuration
-├── blocked-domains.txt     # Blocklist (regex)
+├── docker-compose.yml          # Stack definition
+├── tinyproxy.conf              # Proxy configuration
+├── blocked-domains.txt         # Domain blocklist (regex)
+├── allowed-containers.txt      # Containers allowed in Block-new mode
+├── blocked-containers.txt      # Containers denied in Allow-new mode
+├── proxy-config.json           # GUI settings (new client policy)
 ├── gui/
-│   ├── Dockerfile          # GUI container build
-│   ├── index.php           # Web interface
-│   ├── api.php             # Backend API
-│   └── style.css           # Styling
-└── README.md               # This file
+│   ├── Dockerfile              # GUI container build
+│   ├── entrypoint.sh           # Container startup & permissions
+│   ├── index.php               # Web interface
+│   ├── api.php                 # Backend API
+│   └── style.css               # Styling
+└── README.md                   # This file
 ```
 
 ## Security & Privacy

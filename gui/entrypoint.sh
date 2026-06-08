@@ -3,6 +3,9 @@
 chown www-data:www-data /app/blocked-domains.txt 2>/dev/null || chmod 666 /app/blocked-domains.txt 2>/dev/null
 chown www-data:www-data /app/upstream.conf 2>/dev/null || chmod 666 /app/upstream.conf 2>/dev/null
 chown www-data:www-data /app/tinyproxy.conf 2>/dev/null || chmod 666 /app/tinyproxy.conf 2>/dev/null
+chown www-data:www-data /app/allowed-containers.txt 2>/dev/null || chmod 666 /app/allowed-containers.txt 2>/dev/null
+chown www-data:www-data /app/blocked-containers.txt 2>/dev/null || chmod 666 /app/blocked-containers.txt 2>/dev/null
+chown www-data:www-data /app/proxy-config.json 2>/dev/null || chmod 666 /app/proxy-config.json 2>/dev/null
 
 # Allow www-data to use Docker socket for container restarts
 if [ -S /var/run/docker.sock ]; then
