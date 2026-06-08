@@ -806,15 +806,17 @@
 
                 result.containers.forEach(container => {
                     const effectiveAllowed = container.allowed;
+                    const isOnline    = container.online !== false;
                     const rowClass    = effectiveAllowed ? 'container-row-allowed' : 'container-row-blocked';
                     const statusClass = effectiveAllowed ? 'status-allowed' : 'status-blocked';
                     const statusText  = effectiveAllowed ? '✓ Allowed' : '✗ Blocked';
                     const btnClass    = container.allowed ? 'btn-container-block' : 'btn-container-allow';
                     const btnText     = container.allowed ? 'Block' : 'Allow';
                     const safeName    = escapeHtml(container.name).replace(/'/g, "\\'");
+                    const offlineBadge = isOnline ? '' : ' <span class="container-offline">(offline)</span>';
 
-                    html += '<tr class="' + rowClass + '">';
-                    html += '<td class="container-name">' + escapeHtml(container.name) + '</td>';
+                    html += '<tr class="' + rowClass + (isOnline ? '' : ' container-row-offline') + '">';
+                    html += '<td class="container-name">' + escapeHtml(container.name) + offlineBadge + '</td>';
                     html += '<td class="container-ip">' + escapeHtml(container.ip) + '</td>';
                     html += '<td><span class="container-status ' + statusClass + '">' + statusText + '</span></td>';
                     html += '<td><button class="' + btnClass + '" onclick="toggleContainer(\'' + safeName + '\', ' + !container.allowed + ')">' + btnText + '</button></td>';

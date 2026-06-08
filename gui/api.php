@@ -521,6 +521,8 @@ function getCoderContainers() {
     $policy = getProxyConfig()['config']['new_client_policy'] ?? 'block';
 
     $result = [];
+    $seenNames = [];
+
     foreach ($networkContainers as $name => $ip) {
         if ($name === 'tinyproxy' || $name === 'tinyproxy-gui') continue;
 
@@ -531,9 +533,22 @@ function getCoderContainers() {
         }
 
         $result[] = [
-            'name' => $name,
-            'ip'   => $ip,
-            'allowed' => $effectiveAllowed
+            'name'    => $name,
+            'ip'      => $ip,
+            'allowed' => $effectiveAllowed,
+            'online'  => true
+        ];
+        $seenNames[] = $name;
+    }
+
+    // Always show explicitly blocked containers even when offline
+    foreach ($blockedContainers as $name) {
+        if (in_array($name, $seenNames)) continue;
+        $result[] = [
+            'name'    => $name,
+            'ip'      => '—',
+            'allowed' => false,
+            'online'  => false
         ];
     }
 

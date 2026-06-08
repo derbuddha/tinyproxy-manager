@@ -962,6 +962,17 @@ h2 {
     background: #fee2e2;
 }
 
+.container-row-offline {
+    opacity: 0.65;
+}
+
+.container-offline {
+    font-size: 0.75em;
+    color: #9ca3af;
+    font-style: italic;
+    font-weight: normal;
+}
+
 .container-table td {
     padding: 14px 28px;
     vertical-align: middle;
