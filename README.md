@@ -71,10 +71,12 @@ export https_proxy=http://localhost:8888
 
 The GUI discovers every container on the shared Docker network and lets you allow or deny each one individually. Access is enforced with `Allow`/`Deny` IP rules written into `tinyproxy.conf`, so it works independently of the domain blocklist.
 
-### Policy modes
+### Policy modes (`new_client_policy`)
 
-- **Block new** (default/allowlist mode): only containers listed in `allowed-containers.txt` may use the proxy. Everything else is denied.
-- **Allow new** (denylist mode): every container may use the proxy except those explicitly listed in `blocked-containers.txt`.
+The active mode is stored as `new_client_policy` in `proxy-config.json` (`"block"` or `"allow"`):
+
+- **Block new** (`new_client_policy: "block"`, default): only containers listed in `allowed-containers.txt` may use the proxy. Everything else is denied. Every new workspace/container has to be explicitly allowed here before it can reach the proxy at all.
+- **Allow new** (`new_client_policy: "allow"`): every container may use the proxy except those explicitly listed in `blocked-containers.txt`. Use this if you don't want to maintain a per-container whitelist and would rather gate access purely by [Domain Filter Mode](#domain-filter-mode) below - see "Combining with Domain Filter Mode" for why that pairing matters.
 
 Switch modes with the **New clients: Block new / Allow new** toggle in the "Container Access Control" card. Changing the policy re-syncs the `Allow`/`Deny` rules and restarts Tinyproxy.
 
@@ -84,6 +86,16 @@ Switch modes with the **New clients: Block new / Allow new** toggle in the "Cont
 - Containers that were explicitly blocked are still shown (marked `offline`) even if they're not currently running, so a rule isn't lost just because the container is stopped.
 - Container IPs can change on restart (e.g. after `docker compose up`). Use **⚡ Sync IPs & Restart** to refresh the `Allow`/`Deny` rules with each container's current IP and restart Tinyproxy.
 - `tinyproxy` and `tinyproxy-gui` are excluded from the list since they aren't proxy clients.
+
+### Combining with Domain Filter Mode
+
+Container Access Control and [Domain Filter Mode](#domain-filter-mode) are two **independent** gates - a request has to pass both. This trips people up, so to be explicit:
+
+- **Block new** (container whitelist) + any domain mode: only whitelisted containers get through at all; what they can then reach depends on the domain mode separately.
+- **Allow new** (every container passes) + **Allow only listed domains**: this is the "any workspace, curated destinations" model - you don't maintain a per-container whitelist at all, and `allowed-domains.txt` alone controls what's reachable, uniformly for every container. This is usually what you want if containers/workspaces come and go frequently (e.g. ephemeral Coder workspaces) and you don't want to whitelist each one by name.
+- **Allow new** + **Block listed domains**: effectively open access - every container can reach everything except whatever's explicitly blocked. Rarely what you want unless you're only using the domain blocklist for a handful of known-bad domains.
+
+⚠️ If you switch to **Allow only listed domains** while `allowed-domains.txt` is empty (or missing an entry your workspaces need), that domain - and every other unlisted one - is blocked for **every** container, not just new ones. Populate `allowed-domains.txt` with everything your workspaces actually need *before* flipping Domain Filter Mode to "allow", to avoid an unexpected full outage.
 
 ## Domain Filter Mode
 

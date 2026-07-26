@@ -4,6 +4,7 @@
 #
 # What it does:
 #   - Resets container allow/block lists to empty templates
+#   - Resets allowed-domains.txt to its template comments
 #   - Resets the noise-filter list to its template comments
 #   - Clears tinyproxy.conf's Allow list back to just localhost
 #   - Replaces the personal "coder.kloske.eu" example with a generic one
@@ -24,6 +25,17 @@ echo "Resetting blocked-containers.txt ..."
 cat > blocked-containers.txt <<'EOF'
 # Blocked containers (explicit denies in Allow-new mode)
 # Managed by the Tinyproxy GUI
+EOF
+
+echo "Resetting allowed-domains.txt ..."
+cat > allowed-domains.txt <<'EOF'
+# Allowed Domains - one per line
+# Regex patterns supported
+# Only enforced when Domain Filter Mode is set to "Allow only listed domains" -
+# in that mode every domain NOT listed here is blocked.
+# Examples:
+# ^.*\.github\.com$
+# ^.*\.docker\.com$
 EOF
 
 echo "Resetting traffic-noise-filters.txt ..."

@@ -39,12 +39,18 @@ if ($selectedContainer !== '') {
 }
 
 $total = count($visibleHistory);
-$perPage = 100;
+$perPageOptions = [20, 50, 100, 1000, 'all'];
+$perPageParam = isset($_GET['per_page']) ? trim((string)$_GET['per_page']) : '100';
+if (!in_array($perPageParam, ['20', '50', '100', '1000', 'all'], true)) {
+    $perPageParam = '100';
+}
+$perPage = $perPageParam === 'all' ? max(1, $total) : (int)$perPageParam;
 $totalPages = max(1, (int)ceil($total / $perPage));
 $page = isset($_GET['page']) ? max(1, min($totalPages, (int)$_GET['page'])) : 1;
 $offset = ($page - 1) * $perPage;
 $pageItems = array_slice($visibleHistory, $offset, $perPage);
 $containerQS = $selectedContainer !== '' ? '&container=' . urlencode($selectedContainer) : '';
+$perPageQS = '&per_page=' . urlencode($perPageParam);
 
 function h($s) {
     return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
@@ -57,7 +63,7 @@ function h($s) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tinyproxy Manager - Full Traffic Log</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=<?php echo filemtime(__DIR__ . '/style.css'); ?>">
 </head>
 <body>
     <div class="container">
@@ -107,6 +113,16 @@ function h($s) {
                             <option value="<?php echo h($c); ?>" <?php echo $c === $selectedContainer ? 'selected' : ''; ?>><?php echo h($c); ?></option>
                         <?php endforeach; ?>
                     </select>
+
+                    <label for="per-page-select" style="margin-left: 16px;">Show:</label>
+                    <select name="per_page" id="per-page-select" onchange="this.form.submit()">
+                        <?php foreach ($perPageOptions as $opt): ?>
+                            <option value="<?php echo h($opt); ?>" <?php echo ((string)$opt === $perPageParam) ? 'selected' : ''; ?>>
+                                <?php echo $opt === 'all' ? 'ALL' : h($opt); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+
                     <?php if ($selectedContainer !== ''): ?>
                         <a href="history.php" class="btn-clear-filters" style="text-decoration: none; display: inline-block;">Clear</a>
                     <?php endif; ?>
@@ -157,11 +173,11 @@ function h($s) {
 
             <div class="pagination">
                 <?php if ($page > 1): ?>
-                    <a class="btn-restart" href="?page=<?php echo ($page - 1) . $containerQS; ?>">← Prev</a>
+                    <a class="btn-restart" href="?page=<?php echo ($page - 1) . $containerQS . $perPageQS; ?>">← Prev</a>
                 <?php endif; ?>
                 <span class="pagination-info">Page <?php echo $page; ?> / <?php echo $totalPages; ?></span>
                 <?php if ($page < $totalPages): ?>
-                    <a class="btn-restart" href="?page=<?php echo ($page + 1) . $containerQS; ?>">Next →</a>
+                    <a class="btn-restart" href="?page=<?php echo ($page + 1) . $containerQS . $perPageQS; ?>">Next →</a>
                 <?php endif; ?>
             </div>
             </div>

@@ -207,7 +207,7 @@ function ingestTrafficHistory($tailLines = 3000, $maxHistory = 10000) {
             $history = array_slice($history, -$maxHistory);
         }
 
-        @file_put_contents($historyFile, json_encode($history), LOCK_EX);
+        @file_put_contents($historyFile, json_encode($history, JSON_PRETTY_PRINT), LOCK_EX);
 
         return ['success' => true, 'message' => 'History updated', 'added' => count($newEntries), 'total' => count($history)];
     } finally {

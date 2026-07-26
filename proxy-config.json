@@ -1,5 +1,3 @@
 {
-    "new_client_policy": "allow",
-    "domain_filter_mode": "allow",
-    "traffic_blocked": false
+    "new_client_policy": "block"
 }

@@ -896,7 +896,7 @@ a.btn-restart, a.btn-sync-allow {
 
 /* Workspace/container selector (Full Traffic Log page) */
 .container-select-row {
-    margin-bottom: 20px;
+    margin-bottom: 32px;
 }
 
 .container-select-row form {
