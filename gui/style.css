@@ -136,6 +136,11 @@ h2 {
     transition: all 0.2s;
 }
 
+a.btn-restart, a.btn-sync-allow {
+    text-decoration: none;
+    display: inline-block;
+}
+
 .btn-add:hover, .btn-restart:hover {
     background: #2563eb;
     box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
@@ -887,6 +892,76 @@ h2 {
     font-size: 12px;
     color: #64748b;
     font-style: italic;
+}
+
+/* Workspace/container selector (Full Traffic Log page) */
+.container-select-row {
+    margin-bottom: 20px;
+}
+
+.container-select-row form {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.container-select-row label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #475569;
+}
+
+.container-select-row select {
+    padding: 10px 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 14px;
+    background: #ffffff;
+    min-width: 260px;
+}
+
+/* Pagination (Full Traffic Log page) */
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #e5e7eb;
+}
+
+.pagination-info {
+    font-size: 14px;
+    color: #64748b;
+    font-weight: 600;
+}
+
+/* Domain Filter Mode */
+.domain-card-badge {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    margin-left: 10px;
+    vertical-align: middle;
+}
+
+.domain-card-badge.active {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.domain-card-badge.inactive {
+    background: #e2e8f0;
+    color: #64748b;
+}
+
+.domain-card-inactive {
+    opacity: 0.55;
 }
 
 /* Container Access Control */

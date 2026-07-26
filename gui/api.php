@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/traffic-parser.php';
+
 // Prevent PHP errors/warnings from corrupting JSON output
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
@@ -39,18 +41,17 @@ if (!empty($rawInput)) {
     }
 }
 
-function addDomain($domain) {
-    global $file;
+function addDomainToFile($file, $domain) {
     $domain = trim($domain);
-    
+
     if (empty($domain)) {
         return ['success' => false, 'message' => 'Domain is empty'];
     }
-    
+
     if (strlen($domain) < 3) {
         return ['success' => false, 'message' => 'Domain too short'];
     }
-    
+
     // Check if domain already exists
     if (file_exists($file)) {
         $lines = file($file, FILE_IGNORE_NEW_LINES);
@@ -61,18 +62,18 @@ function addDomain($domain) {
             }
         }
     }
-    
+
     // Add domain
     $result = file_put_contents($file, "\n" . $domain, FILE_APPEND | LOCK_EX);
     if ($result === false) {
         return ['success' => false, 'message' => 'Error writing file'];
     }
-    
+
     // Try to restart tinyproxy container
     $output = [];
     $exitCode = 1;
     @exec('docker restart tinyproxy 2>&1', $output, $exitCode);
-    
+
     if ($exitCode === 0) {
         return ['success' => true, 'message' => 'Domain added and Tinyproxy restarted successfully!', 'restart' => true];
     } else {
@@ -80,21 +81,19 @@ function addDomain($domain) {
     }
 }
 
-function deleteDomain($domain) {
-    global $file;
-    
+function deleteDomainFromFile($file, $domain) {
     if (!file_exists($file)) {
         return ['success' => false, 'message' => 'File not found'];
     }
-    
+
     $lines = file($file, FILE_IGNORE_NEW_LINES);
     if ($lines === false) {
         return ['success' => false, 'message' => 'Error reading file'];
     }
-    
+
     $newLines = [];
     $found = false;
-    
+
     foreach ($lines as $line) {
         if (trim($line) === trim($domain)) {
             $found = true;
@@ -105,28 +104,46 @@ function deleteDomain($domain) {
             $newLines[] = $line;
         }
     }
-    
+
     if (!$found) {
         return ['success' => false, 'message' => 'Domain not found'];
     }
-    
+
     // Write file with proper formatting - preserve header comments and add single trailing newline
     $content = '';
     foreach ($newLines as $line) {
         $content .= $line . "\n";
     }
     file_put_contents($file, $content, LOCK_EX);
-    
+
     // Try to restart tinyproxy container
     $output = [];
     $exitCode = 1;
     @exec('docker restart tinyproxy 2>&1', $output, $exitCode);
-    
+
     if ($exitCode === 0) {
         return ['success' => true, 'message' => 'Domain deleted and Tinyproxy restarted successfully!', 'restart' => true];
     } else {
         return ['success' => true, 'message' => 'Domain deleted. Please restart Tinyproxy manually!', 'restart' => false];
     }
+}
+
+function addDomain($domain) {
+    global $file;
+    return addDomainToFile($file, $domain);
+}
+
+function deleteDomain($domain) {
+    global $file;
+    return deleteDomainFromFile($file, $domain);
+}
+
+function addAllowedDomain($domain) {
+    return addDomainToFile('/app/allowed-domains.txt', $domain);
+}
+
+function deleteAllowedDomain($domain) {
+    return deleteDomainFromFile('/app/allowed-domains.txt', $domain);
 }
 
 function getStats() {
@@ -370,8 +387,7 @@ function deleteNoproxy($entry) {
 
 function getTraffic($lines = 200) {
     $logFile = '/var/log/tinyproxy/tinyproxy.log';
-    $traffic = [];
-    
+
     if (!file_exists($logFile)) {
         return [
             'success' => true,
@@ -380,86 +396,37 @@ function getTraffic($lines = 200) {
             'count' => 0
         ];
     }
-    
+
     // Read last N lines of log file
     $logLines = [];
     $command = "tail -n " . intval($lines) . " " . escapeshellarg($logFile) . " 2>/dev/null";
     @exec($command, $logLines);
-    
-    // Track source IPs by PID
-    $sourceIpByPid = [];
-    
-    foreach ($logLines as $line) {
-        if (empty($line)) continue;
-        
-        if (preg_match('/(\w+)\s+(\w+\s+\d+\s+\d+:\d+:\d+)\s+\[(\d+)\]:\s+(.+)$/', $line, $matches)) {
-            $level = $matches[1];
-            $timestamp = $matches[2];
-            $pid = $matches[3];
-            $message = $matches[4];
-            
-            // Extract source IP from Connect line: "Connect (file descriptor X): 192.168.0.48 [192.168.0.48]"
-            if (preg_match('/Connect \(file descriptor \d+\):\s+([^\s]+)/', $message, $sourceMatches)) {
-                $sourceIpByPid[$pid] = $sourceMatches[1];
-            }
-            
-            // Get source IP for this PID
-            $sourceIp = $sourceIpByPid[$pid] ?? '';
-            
-            if (preg_match('/Request.*:\s+(GET|POST|CONNECT|HEAD|PUT|DELETE|OPTIONS|PATCH)\s+(.+)/', $message, $reqMatches)) {
-                $method = $reqMatches[1];
-                $url = $reqMatches[2];
-                
-                $parsedUrl = parse_url($url);
-                $domain = $parsedUrl['host'] ?? $url;
-                
-                $traffic[] = [
-                    'timestamp' => $timestamp,
-                    'method' => $method,
-                    'url' => $url,
-                    'domain' => $domain,
-                    'source' => $sourceIp,
-                    'level' => $level
-                ];
-            }
-            else if (strpos($message, 'Proxying refused') !== false || strpos($message, 'filtered') !== false) {
-                if (preg_match('/Proxying refused.*"(.+?)"/', $message, $deniedMatches)) {
-                    $url = $deniedMatches[1];
-                    $parsedUrl = parse_url($url);
-                    $domain = $parsedUrl['host'] ?? $url;
 
-                    $traffic[] = [
-                        'timestamp' => $timestamp,
-                        'method' => 'BLOCKED',
-                        'url' => $url,
-                        'domain' => $domain,
-                        'source' => $sourceIp,
-                        'level' => 'BLOCKED'
-                    ];
-                }
-            }
-            else if (preg_match('/Unauthorized connection from "([^"]+)" \[([^\]]+)\]/', $message, $unauthMatches)) {
-                $traffic[] = [
-                    'timestamp' => $timestamp,
-                    'method' => 'DENIED',
-                    'url' => '',
-                    'domain' => '',
-                    'source' => $unauthMatches[1] . ' [' . $unauthMatches[2] . ']',
-                    'level' => 'UNAUTHORIZED'
-                ];
-            }
+    $allTraffic = parseTinyproxyLogLines($logLines);
+    $allTraffic = array_reverse($allTraffic);
+
+    // Filter noise before capping to 50, so genuinely useful entries aren't crowded out
+    // by noisy ones that just get hidden anyway.
+    $filters = getNoiseFilters();
+    $traffic = [];
+    $hiddenByNoiseFilter = 0;
+    foreach ($allTraffic as $entry) {
+        if (isNoiseFiltered($entry, $filters)) {
+            $hiddenByNoiseFilter++;
+        } elseif (count($traffic) < 50) {
+            $traffic[] = $entry;
         }
     }
-    
-    $traffic = array_reverse($traffic);
-    
-    // Limit to 50 entries
-    $traffic = array_slice($traffic, 0, 50);
-    
+
+    // Also archive newly-seen entries into the capped history store. The background
+    // logger does this too, so this is a cheap redundant trigger for whenever the GUI is open.
+    ingestTrafficHistory();
+
     return [
         'success' => true,
         'traffic' => $traffic,
-        'count' => count($traffic)
+        'count' => count($traffic),
+        'hidden_by_noise_filter' => $hiddenByNoiseFilter
     ];
 }
 
@@ -562,7 +529,7 @@ function getCoderContainers() {
 
 function getProxyConfig() {
     $configFile = '/app/proxy-config.json';
-    $defaults = ['new_client_policy' => 'block'];
+    $defaults = ['new_client_policy' => 'block', 'domain_filter_mode' => 'block', 'traffic_blocked' => false];
 
     if (!file_exists($configFile)) {
         return ['success' => true, 'config' => $defaults];
@@ -582,8 +549,10 @@ function getProxyConfig() {
 }
 
 function setProxyConfig($key, $value) {
-    $configFile = '/app/proxy-config.json';
-    $allowed = ['new_client_policy' => ['allow', 'block']];
+    $allowed = [
+        'new_client_policy' => ['allow', 'block'],
+        'domain_filter_mode' => ['allow', 'block'],
+    ];
 
     if (!array_key_exists($key, $allowed)) {
         return ['success' => false, 'message' => 'Unknown config key'];
@@ -593,6 +562,13 @@ function setProxyConfig($key, $value) {
         return ['success' => false, 'message' => 'Invalid value for ' . $key];
     }
 
+    return setInternalConfigValue($key, $value);
+}
+
+// Writes proxy-config.json directly, bypassing the user-facing key/value allowlist above.
+// Used for internal state (e.g. traffic_blocked) that isn't set via the generic set_config action.
+function setInternalConfigValue($key, $value) {
+    $configFile = '/app/proxy-config.json';
     $current = getProxyConfig()['config'];
     $current[$key] = $value;
 
@@ -601,6 +577,42 @@ function setProxyConfig($key, $value) {
     }
 
     return ['success' => true, 'message' => 'Config updated'];
+}
+
+function syncDomainFilterMode() {
+    $tinyproxyConf = '/app/tinyproxy.conf';
+    $mode = getProxyConfig()['config']['domain_filter_mode'] ?? 'block';
+
+    if ($mode === 'allow') {
+        $filterFile = '/etc/tinyproxy/allowed-domains.txt';
+        $defaultDeny = 'Yes';
+    } else {
+        $filterFile = '/etc/tinyproxy/blocked-domains.txt';
+        $defaultDeny = 'No';
+    }
+
+    $newBlock = 'Filter "' . $filterFile . '"' . "\n" . 'FilterDefaultDeny ' . $defaultDeny;
+
+    $content = @file_get_contents($tinyproxyConf);
+    if ($content === false) {
+        return ['success' => false, 'message' => 'Error reading tinyproxy.conf'];
+    }
+
+    if (strpos($content, '# DOMAIN_FILTER_START') === false) {
+        return ['success' => false, 'message' => 'DOMAIN_FILTER markers not found in tinyproxy.conf'];
+    }
+
+    $content = preg_replace(
+        '/(# DOMAIN_FILTER_START\n).*?(\n# DOMAIN_FILTER_END)/s',
+        '$1' . $newBlock . '$2',
+        $content
+    );
+
+    if (@file_put_contents($tinyproxyConf, $content, LOCK_EX) === false) {
+        return ['success' => false, 'message' => 'Error writing tinyproxy.conf'];
+    }
+
+    return ['success' => true, 'message' => 'Domain filter mode synchronized'];
 }
 
 function syncAllowRules($allowedNames = null) {
@@ -721,106 +733,54 @@ function setContainerAllow($containerName, $allow) {
 }
 
 function getTrafficBlock() {
-    global $file;
-    
-    if (!file_exists($file)) {
-        return ['success' => true, 'blocked' => false];
-    }
-    
-    $lines = file($file, FILE_IGNORE_NEW_LINES);
-    if ($lines === false) {
-        return ['success' => true, 'blocked' => false];
-    }
-    
-    foreach ($lines as $line) {
-        if (trim($line) === '# STOP_ALL_TRAFFIC') {
-            return ['success' => true, 'blocked' => true];
-        }
-    }
-    
-    return ['success' => true, 'blocked' => false];
+    $blocked = getProxyConfig()['config']['traffic_blocked'] ?? false;
+    return ['success' => true, 'blocked' => (bool)$blocked];
 }
 
+// The kill-switch overrides the CONTAINER_ALLOW block directly (Deny 0.0.0.0/0), so it takes
+// effect regardless of container access policy or domain filter mode - both of which only ever
+// look at connections that already passed the Allow/Deny check.
 function setTrafficBlock($block) {
-    global $file;
-    
-    if ($block) {
-        $lines = file_exists($file) ? file($file, FILE_IGNORE_NEW_LINES) : [];
-        if ($lines === false) $lines = [];
-        
-        foreach ($lines as $line) {
-            if (trim($line) === '# STOP_ALL_TRAFFIC') {
-                return ['success' => true, 'blocked' => true, 'message' => 'Traffic is already stopped'];
-            }
-        }
-        
-        $lines[] = '# STOP_ALL_TRAFFIC';
-        $lines[] = '^.*$';
-        $writeResult = @file_put_contents($file, implode("\n", $lines) . "\n", LOCK_EX);
-        
-        if ($writeResult === false) {
-            return [
-                'success' => false,
-                'blocked' => false,
-                'message' => 'Error writing file. No write permissions on ' . $file
-            ];
-        }
-        
-        // Try to restart tinyproxy container (may fail if docker socket not available)
-        $output = [];
-        $exitCode = 1;
-        @exec('docker restart tinyproxy 2>&1', $output, $exitCode);
-        
-        return [
-            'success' => true,
-            'blocked' => true,
-            'message' => 'All traffic has been stopped!',
-            'restart' => $exitCode === 0
-        ];
-    } else {
-        if (!file_exists($file)) {
-            return ['success' => true, 'blocked' => false, 'message' => 'Traffic was not stopped'];
-        }
-        
-        $lines = file($file, FILE_IGNORE_NEW_LINES);
-        if ($lines === false) $lines = [];
-        $newLines = [];
-        $skipNext = false;
-        
-        foreach ($lines as $line) {
-            if (trim($line) === '# STOP_ALL_TRAFFIC') {
-                $skipNext = true;
-                continue;
-            }
-            if ($skipNext && trim($line) === '^.*$') {
-                $skipNext = false;
-                continue;
-            }
-            $skipNext = false;
-            $newLines[] = $line;
-        }
-        
-        $writeResult = @file_put_contents($file, implode("\n", $newLines) . "\n", LOCK_EX);
-        
-        if ($writeResult === false) {
-            return [
-                'success' => false,
-                'blocked' => true,
-                'message' => 'Error writing file. No write permissions on ' . $file
-            ];
-        }
-        
-        $output = [];
-        $exitCode = 1;
-        @exec('docker restart tinyproxy 2>&1', $output, $exitCode);
-        
-        return [
-            'success' => true,
-            'blocked' => false,
-            'message' => 'Traffic has been enabled!',
-            'restart' => $exitCode === 0
-        ];
+    $tinyproxyConf = '/app/tinyproxy.conf';
+
+    $content = @file_get_contents($tinyproxyConf);
+    if ($content === false) {
+        return ['success' => false, 'blocked' => !$block, 'message' => 'Error reading tinyproxy.conf'];
     }
+
+    if (strpos($content, '# CONTAINER_ALLOW_START') === false) {
+        return ['success' => false, 'blocked' => !$block, 'message' => 'CONTAINER_ALLOW markers not found in tinyproxy.conf'];
+    }
+
+    if ($block) {
+        $content = preg_replace(
+            '/(# CONTAINER_ALLOW_START\n).*?(\n# CONTAINER_ALLOW_END)/s',
+            '$1' . 'Deny 0.0.0.0/0' . '$2',
+            $content
+        );
+        if (@file_put_contents($tinyproxyConf, $content, LOCK_EX) === false) {
+            return ['success' => false, 'blocked' => false, 'message' => 'Error writing tinyproxy.conf'];
+        }
+    } else {
+        // Rebuild the normal Allow/Deny rules from the current container access policy
+        $syncResult = syncAllowRules();
+        if (!$syncResult['success']) {
+            return ['success' => false, 'blocked' => true, 'message' => $syncResult['message']];
+        }
+    }
+
+    setInternalConfigValue('traffic_blocked', $block);
+
+    $output = [];
+    $exitCode = 1;
+    @exec('docker restart tinyproxy 2>&1', $output, $exitCode);
+
+    return [
+        'success' => true,
+        'blocked' => $block,
+        'message' => $block ? 'All traffic has been stopped!' : 'Traffic has been enabled!',
+        'restart' => $exitCode === 0
+    ];
 }
 
 // === Main Logic ===
@@ -841,6 +801,30 @@ switch ($action) {
     case 'delete':
         $domain = $data['domain'] ?? '';
         echo json_encode(deleteDomain($domain));
+        break;
+
+    case 'add_allowed_domain':
+        $domain = $data['domain'] ?? '';
+        echo json_encode(addAllowedDomain($domain));
+        break;
+
+    case 'delete_allowed_domain':
+        $domain = $data['domain'] ?? '';
+        echo json_encode(deleteAllowedDomain($domain));
+        break;
+
+    case 'get_noise_filters':
+        echo json_encode(['success' => true, 'filters' => getNoiseFilters()]);
+        break;
+
+    case 'add_noise_filter':
+        $value = $data['value'] ?? '';
+        echo json_encode(addNoiseFilter($value));
+        break;
+
+    case 'delete_noise_filter':
+        $value = $data['value'] ?? '';
+        echo json_encode(deleteNoiseFilter($value));
         break;
         
     case 'stats':
@@ -915,7 +899,7 @@ switch ($action) {
         $value = $data['value'] ?? '';
         $result = setProxyConfig($key, $value);
         if ($result['success']) {
-            $syncResult = syncAllowRules();
+            $syncResult = $key === 'domain_filter_mode' ? syncDomainFilterMode() : syncAllowRules();
             if ($syncResult['success']) {
                 $restartOut = [];
                 $exitCode = 1;
@@ -924,6 +908,8 @@ switch ($action) {
                 $result['message'] .= $exitCode === 0
                     ? ' Tinyproxy restarted!'
                     : ' Please restart Tinyproxy manually!';
+            } else {
+                $result['message'] .= ' Warning: ' . $syncResult['message'];
             }
         }
         echo json_encode($result);

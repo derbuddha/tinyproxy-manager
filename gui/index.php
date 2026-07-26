@@ -49,24 +49,28 @@
         <div class="card">
             <h2>🔴 Live-Traffic Monitor</h2>
             <div class="traffic-controls">
-                <button class="btn-restart" onclick="refreshTraffic()">↻ Refresh</button>
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <button class="btn-restart" onclick="refreshTraffic()">↻ Refresh</button>
+                    <a href="history.php" class="btn-restart">📜 Full Log</a>
+                    <a href="export.php" class="btn-sync-allow">⬇ Export JSON</a>
+                </div>
                 <label class="auto-refresh-toggle">
                     <input type="checkbox" id="auto-refresh" checked>
                     <span>Auto-Refresh (5s)</span>
                 </label>
             </div>
 
-            <!-- Domain Filter Section -->
+            <!-- Domain Filter Section (this browser only) -->
             <div class="traffic-filter-section">
                 <div class="filter-header">
-                    <h3>🔍 Domain Filter</h3>
+                    <h3>🔍 Local Domain Filter (this browser only)</h3>
                     <button class="btn-toggle-filter" onclick="toggleFilterPanel()">
                         <span id="filter-toggle-icon">▼</span> <span id="filter-count">(0 filtered)</span>
                     </button>
                 </div>
                 <div id="filter-panel" class="filter-panel" style="display: none;">
                     <p class="help-text" style="margin-bottom: 10px;">
-                        Hide specific domains from the traffic monitor. Useful for reducing clutter from frequent or uninteresting domains.
+                        Hide specific domains from the traffic monitor. Stored in this browser only (not shared with other viewers, doesn't affect the Full Log page).
                     </p>
                     <div class="filter-input-row">
                         <input type="text" id="filter-domain-input" placeholder="e.g. example.com, ads.example.com" />
@@ -79,13 +83,52 @@
                 </div>
             </div>
 
+            <!-- Noise Filter Section (server-side, applies for everyone) -->
+            <div class="traffic-filter-section" id="noise-filter-section">
+                <div class="filter-header" style="background: linear-gradient(135deg, #64748b 0%, #475569 100%);">
+                    <h3>🔇 Noise Filter (server-wide)</h3>
+                    <button class="btn-toggle-filter" onclick="toggleNoiseFilterPanel()">
+                        <span id="noise-filter-toggle-icon">▼</span> <span id="noise-filter-count">(0 filters)</span>
+                    </button>
+                </div>
+                <div id="noise-filter-panel" class="filter-panel" style="display: none;">
+                    <p class="help-text" style="margin-bottom: 10px;">
+                        Hides matching domains/sources from this Live Monitor <strong>and</strong> the Full Log page, for every viewer. The stored traffic history and JSON export still keep every entry - this only affects what's displayed.
+                    </p>
+                    <div class="filter-input-row">
+                        <input type="text" id="noise-filter-input" placeholder="e.g. coder.example.com or 172.19.0.1" />
+                        <button class="btn-add" onclick="addNoiseFilter()">Add</button>
+                    </div>
+                    <div id="noise-filter-list" class="filtered-domains-list">
+                        <!-- Dynamically filled -->
+                    </div>
+                </div>
+            </div>
+
             <div id="traffic-list">
                 <p class="loading">Loading traffic data...</p>
             </div>
         </div>
 
-        <div class="card">
-            <h2 id="blocked-domains-title">Blocked Domains</h2>
+        <div class="card" id="domain-filter-mode-card">
+            <h2>🌐 Domain Filter Mode</h2>
+            <p class="help-text" style="margin-bottom: 15px;">
+                Choose whether Tinyproxy blocks only the domains in the Blocked list, or blocks everything except the domains in the Allowed list. Only one list is enforced at a time.
+            </p>
+            <div class="policy-section" id="domain-filter-policy-section">
+                <div class="policy-row">
+                    <span class="policy-label">Mode:</span>
+                    <div class="policy-buttons">
+                        <button id="domain-filter-block-btn" class="btn-policy btn-policy-block" onclick="setDomainFilterMode('block')">🚫 Block listed domains</button>
+                        <button id="domain-filter-allow-btn" class="btn-policy btn-policy-allow" onclick="setDomainFilterMode('allow')">✅ Allow only listed domains</button>
+                    </div>
+                    <span class="policy-hint" id="domain-filter-hint"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" id="blocked-domains-card">
+            <h2 id="blocked-domains-title">Blocked Domains <span class="domain-card-badge" id="blocked-domains-badge"></span></h2>
             <div id="blocked-list">
                 <?php
                 $file = '/app/blocked-domains.txt';
@@ -121,6 +164,44 @@
                     • <code>^.*example\.com$</code> - Blocks all subdomains of example.com<br>
                     • <code>^.*\.ads\..*$</code> - Blocks all domains with "ads"<br>
                     • <code>^facebook\.com$</code> - Blocks only exact facebook.com
+                </p>
+            </div>
+        </div>
+
+        <div class="card" id="allowed-domains-card">
+            <h2 id="allowed-domains-title">Allowed Domains <span class="domain-card-badge" id="allowed-domains-badge"></span></h2>
+            <div id="allowed-list">
+                <?php
+                $allowedDomainsFile = '/app/allowed-domains.txt';
+                if (file_exists($allowedDomainsFile)) {
+                    $lines = file($allowedDomainsFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+                    $hasContent = false;
+                    foreach ($lines as $line) {
+                        $line = trim($line);
+                        if (empty($line) || substr($line, 0, 1) === '#') continue;
+                        $hasContent = true;
+                        $escapedLine = htmlspecialchars($line, ENT_QUOTES, 'UTF-8');
+                        echo "<div class='domain-item'>";
+                        echo "<span class='domain'>$escapedLine</span>";
+                        echo "<button class='btn-delete' onclick='deleteAllowedDomain(\"" . addslashes($escapedLine) . "\")'>Delete</button>";
+                        echo "</div>";
+                    }
+                    if (!$hasContent) {
+                        echo "<p class='no-domains'>No domains allowed yet</p>";
+                    }
+                } else {
+                    echo "<p class='error'>File not found!</p>";
+                }
+                ?>
+            </div>
+            <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                <h3 style="margin-bottom: 12px;">Add Domain</h3>
+                <form id="add-allowed-form">
+                    <input type="text" id="new-allowed-domain" placeholder="e.g. ^.*\.github\.com$" required>
+                    <button type="submit" class="btn-add">Add</button>
+                </form>
+                <p class="help-text" style="margin-top: 10px;">
+                    Only enforced when Domain Filter Mode is <strong>Allow only listed domains</strong> - every other domain is blocked.
                 </p>
             </div>
         </div>
@@ -348,6 +429,110 @@
             listDiv.innerHTML = html;
         }
 
+        // Noise Filter (server-wide, affects Live Monitor + Full Log page for everyone)
+        async function loadNoiseFilters() {
+            try {
+                const response = await fetch('api.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'get_noise_filters'})
+                });
+                const result = await safeJsonParse(response);
+                if (result.success) {
+                    updateNoiseFilterList(result.filters);
+                }
+            } catch (error) {
+                console.error('Error loading noise filters:', error);
+            }
+        }
+
+        function updateNoiseFilterList(filters) {
+            const listDiv = document.getElementById('noise-filter-list');
+            const countSpan = document.getElementById('noise-filter-count');
+
+            countSpan.textContent = '(' + filters.length + ' filters)';
+
+            if (filters.length === 0) {
+                listDiv.innerHTML = '<p class="help-text" style="font-style: italic; margin-top: 10px;">No noise filters yet</p>';
+                return;
+            }
+
+            let html = '<div style="margin-top: 10px;">';
+            filters.forEach(f => {
+                html += '<div class="filter-tag">';
+                html += '<span class="filter-domain">' + escapeHtml(f) + '</span>';
+                html += '<button class="filter-remove" onclick="removeNoiseFilter(\'' + escapeHtml(f).replace(/'/g, "\\'") + '\')" title="Remove filter">×</button>';
+                html += '</div>';
+            });
+            html += '</div>';
+
+            listDiv.innerHTML = html;
+        }
+
+        function toggleNoiseFilterPanel() {
+            const panel = document.getElementById('noise-filter-panel');
+            const icon = document.getElementById('noise-filter-toggle-icon');
+
+            if (panel.style.display === 'none') {
+                panel.style.display = 'block';
+                icon.textContent = '▲';
+            } else {
+                panel.style.display = 'none';
+                icon.textContent = '▼';
+            }
+        }
+
+        async function addNoiseFilter() {
+            const input = document.getElementById('noise-filter-input');
+            const value = input.value.trim();
+
+            if (!value) {
+                alert('Please enter a domain or IP');
+                return;
+            }
+
+            try {
+                const response = await fetch('api.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'add_noise_filter', value: value})
+                });
+                const result = await safeJsonParse(response);
+                if (result.success) {
+                    input.value = '';
+                    showNotification('✓ Noise filter added', 'success');
+                    loadNoiseFilters();
+                    refreshTraffic();
+                } else {
+                    showNotification('✗ ' + result.message, 'error');
+                }
+            } catch (error) {
+                showNotification('Error: ' + error.message, 'error');
+            }
+        }
+
+        async function removeNoiseFilter(value) {
+            if (!confirm('Remove noise filter "' + value + '"?')) return;
+
+            try {
+                const response = await fetch('api.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'delete_noise_filter', value: value})
+                });
+                const result = await safeJsonParse(response);
+                if (result.success) {
+                    showNotification('✓ Noise filter removed', 'success');
+                    loadNoiseFilters();
+                    refreshTraffic();
+                } else {
+                    showNotification('✗ ' + result.message, 'error');
+                }
+            } catch (error) {
+                showNotification('Error: ' + error.message, 'error');
+            }
+        }
+
         // Check if a domain should be filtered
         function shouldFilterDomain(domain) {
             const domainLower = domain.toLowerCase();
@@ -406,17 +591,17 @@
         document.getElementById('add-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const domain = document.getElementById('new-domain').value.trim();
-            
+
             if (!domain) {
                 alert('Please enter a domain');
                 return;
             }
-            
+
             // Show hourglass in title
             const titleElement = document.getElementById('blocked-domains-title');
             const originalTitle = titleElement.textContent;
             titleElement.textContent = '⏳ Restarting Tinyproxy...';
-            
+
             try {
                 const response = await fetch('api.php', {
                     method: 'POST',
@@ -441,6 +626,152 @@
                 alert('Error adding: ' + error.message);
             }
         });
+
+        async function deleteAllowedDomain(domain) {
+            if (!confirm('Really delete domain "' + domain + '"?')) {
+                return;
+            }
+
+            const titleElement = document.getElementById('allowed-domains-title');
+            const originalTitle = titleElement.textContent;
+            titleElement.textContent = '⏳ Restarting Tinyproxy...';
+
+            try {
+                const response = await fetch('api.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'delete_allowed_domain', domain: domain})
+                });
+                const result = await safeJsonParse(response);
+                if (result.success) {
+                    if (result.restart) {
+                        showNotification('✓ Domain deleted and Tinyproxy restarted!', 'success');
+                    } else {
+                        showNotification('✓ Domain deleted. Please restart Tinyproxy manually!', 'warning');
+                    }
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    titleElement.textContent = originalTitle;
+                    alert('Error: ' + result.message);
+                }
+            } catch (error) {
+                titleElement.textContent = originalTitle;
+                alert('Error deleting: ' + error.message);
+            }
+        }
+
+        document.getElementById('add-allowed-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const domain = document.getElementById('new-allowed-domain').value.trim();
+
+            if (!domain) {
+                alert('Please enter a domain');
+                return;
+            }
+
+            const titleElement = document.getElementById('allowed-domains-title');
+            const originalTitle = titleElement.textContent;
+            titleElement.textContent = '⏳ Restarting Tinyproxy...';
+
+            try {
+                const response = await fetch('api.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'add_allowed_domain', domain: domain})
+                });
+                const result = await safeJsonParse(response);
+                if (result.success) {
+                    if (result.restart) {
+                        showNotification('✓ Domain added and Tinyproxy restarted!', 'success');
+                    } else {
+                        showNotification('✓ Domain added. Please restart Tinyproxy manually!', 'warning');
+                    }
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    titleElement.textContent = originalTitle;
+                    alert('Error: ' + result.message);
+                }
+            } catch (error) {
+                titleElement.textContent = originalTitle;
+                alert('Error adding: ' + error.message);
+            }
+        });
+
+        // Domain Filter Mode
+        async function loadDomainFilterMode() {
+            try {
+                const response = await fetch('api.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'get_config'})
+                });
+                const result = await safeJsonParse(response);
+                if (result.success) {
+                    updateDomainFilterModeUI(result.config.domain_filter_mode || 'block');
+                }
+            } catch (error) {
+                console.error('Error loading domain filter mode:', error);
+            }
+        }
+
+        function updateDomainFilterModeUI(mode) {
+            const blockBtn = document.getElementById('domain-filter-block-btn');
+            const allowBtn = document.getElementById('domain-filter-allow-btn');
+            const hint = document.getElementById('domain-filter-hint');
+            const blockedBadge = document.getElementById('blocked-domains-badge');
+            const allowedBadge = document.getElementById('allowed-domains-badge');
+            const blockedCard = document.getElementById('blocked-domains-card');
+            const allowedCard = document.getElementById('allowed-domains-card');
+
+            if (mode === 'allow') {
+                allowBtn.classList.add('active');
+                blockBtn.classList.remove('active');
+                hint.textContent = 'Only domains in the Allowed list are reachable. Everything else is blocked.';
+                blockedBadge.textContent = 'INACTIVE';
+                blockedBadge.className = 'domain-card-badge inactive';
+                allowedBadge.textContent = 'ACTIVE';
+                allowedBadge.className = 'domain-card-badge active';
+                blockedCard.classList.add('domain-card-inactive');
+                allowedCard.classList.remove('domain-card-inactive');
+            } else {
+                blockBtn.classList.add('active');
+                allowBtn.classList.remove('active');
+                hint.textContent = 'Domains in the Blocked list are denied. Everything else is reachable.';
+                blockedBadge.textContent = 'ACTIVE';
+                blockedBadge.className = 'domain-card-badge active';
+                allowedBadge.textContent = 'INACTIVE';
+                allowedBadge.className = 'domain-card-badge inactive';
+                blockedCard.classList.remove('domain-card-inactive');
+                allowedCard.classList.add('domain-card-inactive');
+            }
+        }
+
+        async function setDomainFilterMode(mode) {
+            const blockBtn = document.getElementById('domain-filter-block-btn');
+            const allowBtn = document.getElementById('domain-filter-allow-btn');
+            blockBtn.disabled = true;
+            allowBtn.disabled = true;
+
+            try {
+                const response = await fetch('api.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'set_config', key: 'domain_filter_mode', value: mode})
+                });
+                const result = await safeJsonParse(response);
+                if (result.success) {
+                    updateDomainFilterModeUI(mode);
+                    showNotification('✓ ' + result.message, 'success');
+                } else {
+                    showNotification('✗ ' + result.message, 'error');
+                }
+            } catch (error) {
+                showNotification('Error: ' + error.message, 'error');
+            } finally {
+                blockBtn.disabled = false;
+                allowBtn.disabled = false;
+            }
+        }
 
         async function refreshTraffic() {
             try {
@@ -476,6 +807,9 @@
                 let html = '<div class="traffic-count">📊 <strong>' + filteredTraffic.length + '</strong> Requests shown';
                 if (hiddenCount > 0) {
                     html += ' <span class="filtered-count">(' + hiddenCount + ' filtered out)</span>';
+                }
+                if (result.hidden_by_noise_filter > 0) {
+                    html += ' <span class="filtered-count">· 🔇 ' + result.hidden_by_noise_filter + ' hidden by noise filter</span>';
                 }
                 html += '</div>';
                 html += '<div class="traffic-items">';
@@ -960,6 +1294,8 @@
         loadUpstream();
         loadTrafficBlockStatus();
         loadClientPolicy();
+        loadDomainFilterMode();
+        loadNoiseFilters();
         refreshContainers();
         refreshTraffic();
         

@@ -1,11 +1,2 @@
 # Allowed containers for tinyproxy access
 # Managed by the Tinyproxy GUI
-codersrv-database-1
-codersrv-coder-1
-npm-ngproxymgn-1
-coder-markus-pyexample1
-coder-markus-pythrag
-coder-markus-rssaktiencheck
-coder-markus-test
-coder-martina-python1
-coder-markus-infopage

@@ -1,4 +1,2 @@
 # Blocked containers (explicit denies in Allow-new mode)
 # Managed by the Tinyproxy GUI
-coder-markus-suselocaltest
-coder-markus-suselocal1

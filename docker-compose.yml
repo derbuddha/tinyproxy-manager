@@ -7,6 +7,7 @@ services:
     volumes:
       - ./tinyproxy.conf:/etc/tinyproxy.conf:ro
       - ./blocked-domains.txt:/etc/tinyproxy/blocked-domains.txt:ro
+      - ./allowed-domains.txt:/etc/tinyproxy/allowed-domains.txt:ro
       - /data/tinyproxy-logs:/var/log/tinyproxy
       - /usr/share/zoneinfo:/usr/share/zoneinfo:ro
       - /etc/localtime:/etc/localtime:ro
@@ -22,6 +23,9 @@ services:
       - 8080:80
     volumes:
       - ./blocked-domains.txt:/app/blocked-domains.txt
+      - ./allowed-domains.txt:/app/allowed-domains.txt
+      - ./traffic-history.json:/app/traffic-history.json
+      - ./traffic-noise-filters.txt:/app/traffic-noise-filters.txt
       - ./tinyproxy.conf:/app/tinyproxy.conf
       - ./allowed-containers.txt:/app/allowed-containers.txt
       - ./blocked-containers.txt:/app/blocked-containers.txt

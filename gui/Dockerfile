@@ -11,6 +11,10 @@ RUN apt-get update && apt-get install -y \
 COPY index.php /var/www/html/
 COPY style.css /var/www/html/
 COPY api.php /var/www/html/
+COPY traffic-parser.php /var/www/html/
+COPY traffic-logger.php /var/www/html/
+COPY history.php /var/www/html/
+COPY export.php /var/www/html/
 COPY favicon.ico /var/www/html/
 
 # Create Nginx configuration

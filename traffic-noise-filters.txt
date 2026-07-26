@@ -1,0 +1,5 @@
+# Noise Filters - one domain/IP substring per line
+# Managed by the Tinyproxy GUI
+# Hides matching entries from the Live Monitor and Full Log page only (display-only).
+# The underlying traffic-history.json still keeps every entry, so exports stay complete.
+# Matches case-insensitively against both the request domain and the source IP/name.
