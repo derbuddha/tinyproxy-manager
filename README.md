@@ -1,4 +1,4 @@
-# Tinyproxy Manager - Docker Stack for Dockge
+# Tinyproxy Manager - CDE - Cloud Development Environment
 
 An HTTP proxy with a web GUI for domain filtering and per-container access control, built around Tinyproxy.
 
