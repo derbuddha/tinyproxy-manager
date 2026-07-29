@@ -2,6 +2,13 @@
 // Shared tinyproxy.log parsing logic, used by both the live "traffic" API action
 // (api.php) and the background history logger (traffic-logger.php).
 
+// Docker network shared by tinyproxy and the containers it proxies for - set via
+// NETWORK_NAME in docker-compose.yml so it stays in sync with the `networks:`
+// section there instead of being duplicated as a literal string.
+function getMonitoredNetwork() {
+    return getenv('NETWORK_NAME') ?: 'codersrv_default';
+}
+
 function parseTinyproxyLogLines(array $logLines) {
     $traffic = [];
     $sourceIpByPid = [];
@@ -144,7 +151,7 @@ function extractContainerLabel($source) {
 
     // Strip Tinyproxy's reverse-DNS "container.network" suffix, without mangling a genuine
     // dotted hostname (e.g. a LAN host like "pi.hole").
-    return preg_replace('/\.codersrv_default$/i', '', $source);
+    return preg_replace('/\.' . preg_quote(getMonitoredNetwork(), '/') . '$/i', '', $source);
 }
 
 // Archives newly-seen traffic entries into /app/traffic-history.json, capped at $maxHistory

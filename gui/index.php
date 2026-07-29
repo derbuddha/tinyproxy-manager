@@ -254,7 +254,7 @@
                         <button class="btn-add" onclick="saveUpstream()" style="margin-top: 10px;">Save Upstream Proxy</button>
 
                         <div id="noproxy-section" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd;">
-                            <h3 style="margin-bottom: 10px;">🔓 NoProxy (Direct Connections)</h3>
+                            <h3 id="noproxy-title" style="margin-bottom: 10px;">🔓 NoProxy (Direct Connections)</h3>
                             <p class="help-text" style="margin-bottom: 10px;">
                                 Domains/IPs that should NOT be routed through the Upstream Proxy (direct access).
                             </p>
@@ -922,12 +922,16 @@
         
         async function addNoproxyEntry() {
             const entry = document.getElementById('noproxy-entry').value.trim();
-            
+
             if (!entry) {
                 alert('Please enter an entry');
                 return;
             }
-            
+
+            const titleElement = document.getElementById('noproxy-title');
+            const originalTitle = titleElement.textContent;
+            titleElement.textContent = '⏳ Restarting Tinyproxy...';
+
             try {
                 const response = await fetch('api.php', {
                     method: 'POST',
@@ -938,25 +942,34 @@
                     })
                 });
                 const result = await safeJsonParse(response);
-                
+
                 if (result.success) {
                     document.getElementById('noproxy-entry').value = '';
-                    document.getElementById('upstream-status').innerHTML = 
-                        '<p class="success">✓ ' + result.message + '</p>';
+                    if (result.restart) {
+                        showNotification('✓ NoProxy entry added and Tinyproxy restarted!', 'success');
+                    } else {
+                        showNotification('✓ NoProxy entry added. Please restart Tinyproxy manually!', 'warning');
+                    }
                     setTimeout(() => location.reload(), 1500);
                 } else {
+                    titleElement.textContent = originalTitle;
                     alert('Error: ' + result.message);
                 }
             } catch (error) {
+                titleElement.textContent = originalTitle;
                 alert('Error adding: ' + error.message);
             }
         }
-        
+
         async function deleteNoproxyEntry(entry) {
             if (!confirm('Really delete NoProxy entry "' + entry + '"?')) {
                 return;
             }
-            
+
+            const titleElement = document.getElementById('noproxy-title');
+            const originalTitle = titleElement.textContent;
+            titleElement.textContent = '⏳ Restarting Tinyproxy...';
+
             try {
                 const response = await fetch('api.php', {
                     method: 'POST',
@@ -967,15 +980,20 @@
                     })
                 });
                 const result = await safeJsonParse(response);
-                
+
                 if (result.success) {
-                    document.getElementById('upstream-status').innerHTML = 
-                        '<p class="success">✓ NoProxy entry deleted. Please restart Tinyproxy!</p>';
+                    if (result.restart) {
+                        showNotification('✓ NoProxy entry deleted and Tinyproxy restarted!', 'success');
+                    } else {
+                        showNotification('✓ NoProxy entry deleted. Please restart Tinyproxy manually!', 'warning');
+                    }
                     setTimeout(() => location.reload(), 1500);
                 } else {
+                    titleElement.textContent = originalTitle;
                     alert('Error: ' + result.message);
                 }
             } catch (error) {
+                titleElement.textContent = originalTitle;
                 alert('Error deleting: ' + error.message);
             }
         }
@@ -1119,7 +1137,7 @@
                 }
 
                 if (result.containers.length === 0) {
-                    listDiv.innerHTML = '<p class="no-domains">No external containers detected on the <code>codersrv_default</code> network.</p>';
+                    listDiv.innerHTML = '<p class="no-domains">No external containers detected on the <code>' + escapeHtml(result.network || 'codersrv_default') + '</code> network.</p>';
                     return;
                 }
 

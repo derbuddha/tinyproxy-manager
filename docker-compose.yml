@@ -1,18 +1,42 @@
 services:
+  # One-shot: (re)sets /data/tinyproxy-logs to root:root 777 on the host before
+  # tinyproxy starts. The tinyproxy image runs as a fixed non-root uid/gid 2000
+  # ("tinyproxy" user, baked into the image), so it can't write into that
+  # directory unless it's world-writable. Runs on every `docker compose up` so
+  # a fresh host directory (owned root:root by default) doesn't break tinyproxy
+  # on first boot.
+  tinyproxy-logs-init:
+    image: travix/tinyproxy
+    container_name: tinyproxy-logs-init
+    user: root
+    entrypoint: sh
+    command: -c "chown root:root /var/log/tinyproxy && chmod 777 /var/log/tinyproxy"
+    volumes:
+      - /data/tinyproxy-logs:/var/log/tinyproxy
+    network_mode: "none"
+    restart: "no"
   tinyproxy:
     image: travix/tinyproxy
     container_name: tinyproxy
+    depends_on:
+      tinyproxy-logs-init:
+        condition: service_completed_successfully
     ports:
       - 8888:8888
     volumes:
       - ./tinyproxy.conf:/etc/tinyproxy.conf:ro
       - ./blocked-domains.txt:/etc/tinyproxy/blocked-domains.txt:ro
       - ./allowed-domains.txt:/etc/tinyproxy/allowed-domains.txt:ro
+      # Must stay root:root 777 on the host (see tinyproxy-logs-init above) -
+      # the tinyproxy process inside the container writes as uid/gid 2000.
       - /data/tinyproxy-logs:/var/log/tinyproxy
       - /usr/share/zoneinfo:/usr/share/zoneinfo:ro
       - /etc/localtime:/etc/localtime:ro
     environment:
       - TZ=Europe/Berlin
+    # Pinned explicitly for documentation - this is the "tinyproxy" user baked
+    # into the travix/tinyproxy image (uid 2000), not configurable via env var.
+    user: "2000:2000"
     restart: unless-stopped
     networks:
       - codersrv_default
@@ -34,6 +58,12 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - TINYPROXY_CONTAINER=tinyproxy
+      # Must match the actual name of the `codersrv_default` network below -
+      # both derive from the same NETWORK_NAME variable so there's one place
+      # to change it (set NETWORK_NAME in a .env file, or export it in the
+      # shell before `docker compose up`) rather than a literal string
+      # duplicated across the PHP files.
+      - NETWORK_NAME=${NETWORK_NAME:-codersrv_default}
       - TZ=Europe/Berlin
     restart: unless-stopped
     networks:
@@ -44,4 +74,5 @@ networks:
   proxy-net:
     driver: bridge
   codersrv_default:
+    name: ${NETWORK_NAME:-codersrv_default}
     external: true

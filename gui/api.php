@@ -432,7 +432,8 @@ function getTraffic($lines = 200) {
 
 function getNetworkContainers() {
     $output = [];
-    @exec('docker network inspect codersrv_default --format \'{{json .Containers}}\' 2>/dev/null', $output);
+    $network = escapeshellarg(getMonitoredNetwork());
+    @exec("docker network inspect $network --format '{{json .Containers}}' 2>/dev/null", $output);
     $jsonStr = implode('', $output);
     $map = [];
 
@@ -524,7 +525,7 @@ function getCoderContainers() {
         return strcmp($a['name'], $b['name']);
     });
 
-    return ['success' => true, 'containers' => $result, 'policy' => $policy];
+    return ['success' => true, 'containers' => $result, 'policy' => $policy, 'network' => getMonitoredNetwork()];
 }
 
 function getProxyConfig() {

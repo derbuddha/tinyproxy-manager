@@ -50,13 +50,6 @@ EOF
 echo "Removing traffic-history.json (contains real captured traffic) ..."
 rm -f traffic-history.json
 
-echo "Resetting proxy-config.json to default policy ..."
-cat > proxy-config.json <<'EOF'
-{
-    "new_client_policy": "block"
-}
-EOF
-
 echo "Clearing container Allow rules in tinyproxy.conf ..."
 awk '
   /# CONTAINER_ALLOW_START/ { print; print "Allow 127.0.0.1"; skip=1; next }
