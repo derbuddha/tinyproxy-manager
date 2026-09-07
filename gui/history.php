@@ -17,18 +17,14 @@ $history = array_reverse($history);
 $filters = getNoiseFilters();
 $visibleHistory = [];
 $hiddenByNoiseFilter = 0;
-$containerLabels = [];
 foreach ($history as $entry) {
     if (isNoiseFiltered($entry, $filters)) {
         $hiddenByNoiseFilter++;
         continue;
     }
     $visibleHistory[] = $entry;
-    $label = extractContainerLabel($entry['source'] ?? '');
-    if ($label !== '') $containerLabels[$label] = true;
 }
-$containerList = array_keys($containerLabels);
-sort($containerList, SORT_STRING | SORT_FLAG_CASE);
+$containerList = getKnownContainerLabels();
 
 // Filter to a single workspace/container, if one was selected
 $selectedContainer = isset($_GET['container']) ? trim($_GET['container']) : '';
@@ -66,6 +62,12 @@ function h($s) {
     <link rel="stylesheet" href="style.css?v=<?php echo filemtime(__DIR__ . '/style.css'); ?>">
 </head>
 <body>
+    <!-- Theme Toggle Button -->
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
+        <span class="theme-toggle-icon" id="theme-icon">🌙</span>
+        <span class="theme-toggle-text" id="theme-text">Dark</span>
+    </button>
+
     <div class="container">
         <h1>📜 Full Traffic Log</h1>
 
@@ -84,7 +86,7 @@ function h($s) {
 
             <!-- Noise Filter Section (server-side, applies for everyone, shared with the dashboard) -->
             <div class="traffic-filter-section" id="noise-filter-section" style="margin-bottom: 20px;">
-                <div class="filter-header" style="background: linear-gradient(135deg, #64748b 0%, #475569 100%);">
+                <div class="filter-header filter-header-alt">
                     <h3>🔇 Noise Filter (server-wide)</h3>
                     <button class="btn-toggle-filter" onclick="toggleNoiseFilterPanel()">
                         <span id="noise-filter-toggle-icon">▼</span> <span id="noise-filter-count">(0 filters)</span>
@@ -95,7 +97,7 @@ function h($s) {
                         Hides matching domains/sources from this page <strong>and</strong> the dashboard's Live Monitor, for every viewer. Matches the request domain or the source IP/name (substring, case-insensitive). The stored history and JSON export still keep every entry.
                     </p>
                     <div class="filter-input-row">
-                        <input type="text" id="noise-filter-input" placeholder="e.g. coder.example.com or 172.19.0.1" />
+                        <input type="text" id="noise-filter-input" placeholder="e.g. coder.kloske.eu or 172.19.0.1" />
                         <button class="btn-add" onclick="addNoiseFilter()">Add</button>
                     </div>
                     <div id="noise-filter-list" class="filtered-domains-list">
@@ -185,6 +187,40 @@ function h($s) {
     </div>
 
     <script>
+        // Theme Management
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme') || 'light';
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeUI(newTheme);
+        }
+        
+        function updateThemeUI(theme) {
+            const icon = document.getElementById('theme-icon');
+            const text = document.getElementById('theme-text');
+            
+            if (theme === 'dark') {
+                icon.textContent = '🌙';
+                text.textContent = 'Dark';
+            } else {
+                icon.textContent = '☀️';
+                text.textContent = 'Light';
+            }
+        }
+        
+        // Load saved theme on page load
+        function loadTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeUI(savedTheme);
+        }
+        
+        // Initialize theme
+        loadTheme();
+
         async function safeJsonParse(response) {
             const text = await response.text();
             try {

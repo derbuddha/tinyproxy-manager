@@ -2,6 +2,7 @@
 # Regex patterns supported
 # Only enforced when Domain Filter Mode is set to "Allow only listed domains" -
 # in that mode every domain NOT listed here is blocked.
+# An entry may carry a trailing comment after "#" - Tinyproxy ignores it.
 # Examples:
-# ^.*\.github\.com$
+# ^.*\.github\.com$    # source code
 # ^.*\.docker\.com$

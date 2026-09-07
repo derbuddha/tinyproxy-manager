@@ -106,6 +106,24 @@ The domain filter can work in one of two modes, toggled in the "Domain Filter Mo
 
 Only one list is enforced by Tinyproxy at a time (it maps to Tinyproxy's native `FilterDefaultDeny` option) - the inactive card is shown dimmed in the GUI. Switching modes re-points Tinyproxy's `Filter` directive and restarts it.
 
+### Comments on Allowed Domains
+
+Every entry in the Allowed Domains list can carry a free-text comment explaining *why* it's there - handy once the list grows past a handful of entries and "what needed `vscode.download.prss.microsoft.com` again?" becomes a real question.
+
+- Add one right away via the optional comment field next to the domain in the **Add Domain** form.
+- Add or change one later with the **💬 Comment** button on any entry; press Enter to save, Escape to cancel.
+- Saving an empty comment removes it.
+
+Comments are stored inline in `allowed-domains.txt`, after a `#` on the same line:
+
+```
+github.com                            # needed for git clone
+^.*\.fritz\.box$                      # local network
+vscode.download.prss.microsoft.com    # VS Code updates
+```
+
+Tinyproxy's filter parser cuts every line at the first whitespace or unescaped `#`, so the comment never reaches the filter engine - it's documentation only, and a domain mentioned inside a comment is **not** allowed by it. Because of that, editing a comment needs no Tinyproxy restart and the GUI doesn't trigger one (adding or deleting a domain still does). For the same reason a domain pattern itself can't contain a space or a bare `#`; the GUI rejects those with an explanatory message.
+
 ## Traffic Kill-Switch
 
 The **Stop All Traffic** button in the GUI immediately blocks every request through the proxy, regardless of the domain filter mode or container access rules — useful for quickly cutting off all outbound traffic in an emergency. It works by overriding the container-access `Allow`/`Deny` rules to `Deny 0.0.0.0/0` (rather than touching the domain filter, so it can't be undermined by whatever domain filter mode happens to be active) and restarts Tinyproxy. Disabling it restores the normal per-container rules. The button and card change appearance while traffic is stopped so the state is hard to miss.
@@ -133,7 +151,7 @@ Two dedicated pages built on top of that archive:
 
 Some traffic is just noise - e.g. a self-hosted service phoning its own health-check endpoint every few seconds - and clutters both the Live Monitor and the Full Log page. The **🔇 Noise Filter** panel (below the Live Monitor's local domain filter) lets you suppress matching entries for *every* viewer, backed by `traffic-noise-filters.txt`.
 
-- Matches case-insensitively against both the request domain and the source IP/name (substring match) - e.g. `coder.example.com` or `172.19.0.1`.
+- Matches case-insensitively against both the request domain and the source IP/name (substring match) - e.g. `coder.kloske.eu` or `172.19.0.1`.
 - Display-only: `traffic-history.json` still archives every entry untouched, so the stored count and JSON export stay complete - only what's *shown* on the Live Monitor and Full Log page is affected. Both pages show a "N hidden by noise filter" count so suppressed traffic is never silently invisible.
 - This is different from the **🔍 Local Domain Filter** also on the Live Monitor card: that one is per-browser (`localStorage`), doesn't touch the Full Log page, and is meant for quick one-off decluttering rather than a permanent, shared suppression.
 
@@ -254,7 +272,7 @@ tinyproxy-manager/
 ├── docker-compose.yml          # Stack definition
 ├── tinyproxy.conf              # Proxy configuration
 ├── blocked-domains.txt         # Domain blocklist (regex, used in "Block listed" mode)
-├── allowed-domains.txt         # Domain allowlist (regex, used in "Allow only listed" mode)
+├── allowed-domains.txt         # Domain allowlist (regex + optional "# comment", used in "Allow only listed" mode)
 ├── allowed-containers.txt      # Containers allowed in Block-new mode
 ├── blocked-containers.txt      # Containers denied in Allow-new mode
 ├── proxy-config.json           # GUI settings (new client policy, domain filter mode, kill-switch state)
@@ -266,6 +284,7 @@ tinyproxy-manager/
 │   ├── index.php               # Web interface (dashboard)
 │   ├── api.php                 # Backend API
 │   ├── traffic-parser.php      # Shared tinyproxy.log parsing + history ingestion
+│   ├── domain-filter.php       # Shared filter-list parsing (domain + inline comment)
 │   ├── traffic-logger.php      # Background daemon that archives log entries
 │   ├── history.php             # Paginated full traffic log page
 │   ├── export.php              # JSON export/download of the traffic history

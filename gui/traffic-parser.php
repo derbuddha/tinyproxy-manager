@@ -154,6 +154,30 @@ function extractContainerLabel($source) {
     return preg_replace('/\.' . preg_quote(getMonitoredNetwork(), '/') . '$/i', '', $source);
 }
 
+// Builds the sorted list of workspace/container labels seen in the stored traffic history
+// (after noise filters are applied) - shared by the Full Log page and the Live Monitor's
+// workspace filter dropdown, so both offer the same set of choices.
+function getKnownContainerLabels() {
+    $historyFile = '/app/traffic-history.json';
+    $history = [];
+    if (file_exists($historyFile)) {
+        $decoded = json_decode((string)file_get_contents($historyFile), true);
+        if (is_array($decoded)) $history = $decoded;
+    }
+
+    $filters = getNoiseFilters();
+    $labels = [];
+    foreach ($history as $entry) {
+        if (isNoiseFiltered($entry, $filters)) continue;
+        $label = extractContainerLabel($entry['source'] ?? '');
+        if ($label !== '') $labels[$label] = true;
+    }
+
+    $list = array_keys($labels);
+    sort($list, SORT_STRING | SORT_FLAG_CASE);
+    return $list;
+}
+
 // Archives newly-seen traffic entries into /app/traffic-history.json, capped at $maxHistory
 // entries (oldest dropped first). Safe to call repeatedly/concurrently (web polling and the
 // background logger both call this) - a file lock guards the read-merge-write section.

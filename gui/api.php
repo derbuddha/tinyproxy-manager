@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/traffic-parser.php';
+require_once __DIR__ . '/domain-filter.php';
 
 // Prevent PHP errors/warnings from corrupting JSON output
 ini_set('display_errors', 0);
@@ -41,8 +42,9 @@ if (!empty($rawInput)) {
     }
 }
 
-function addDomainToFile($file, $domain) {
+function addDomainToFile($file, $domain, $comment = '') {
     $domain = trim($domain);
+    $comment = sanitizeDomainComment($comment);
 
     if (empty($domain)) {
         return ['success' => false, 'message' => 'Domain is empty'];
@@ -52,19 +54,44 @@ function addDomainToFile($file, $domain) {
         return ['success' => false, 'message' => 'Domain too short'];
     }
 
+    // Tinyproxy cuts a filter line at the first whitespace or unescaped '#',
+    // so neither may appear in the pattern itself.
+    if (preg_match('/\s/', $domain)) {
+        return ['success' => false, 'message' => 'Domain must not contain spaces'];
+    }
+
+    if (parseDomainLine($domain)['domain'] !== $domain) {
+        return ['success' => false, 'message' => 'Domain must not contain "#" - use the comment field instead'];
+    }
+
     // Check if domain already exists
     if (file_exists($file)) {
         $lines = file($file, FILE_IGNORE_NEW_LINES);
         if ($lines === false) $lines = [];
         foreach ($lines as $line) {
-            if (trim($line) === $domain) {
+            if (parseDomainLine($line)['domain'] === $domain) {
                 return ['success' => false, 'message' => 'Domain already in list'];
             }
         }
     }
 
-    // Add domain
-    $result = file_put_contents($file, "\n" . $domain, FILE_APPEND | LOCK_EX);
+    // Add domain - only add a separating newline if the file doesn't end with
+    // one already, otherwise the list slowly fills up with blank lines.
+    $separator = "\n";
+    if (file_exists($file)) {
+        // filesize() is served from PHP's stat cache, which can be stale if the
+        // file was rewritten earlier in this same request.
+        clearstatcache(true, $file);
+        $size = filesize($file);
+        if ($size === 0) {
+            $separator = '';
+        } else {
+            $tail = @file_get_contents($file, false, null, max(0, $size - 1), 1);
+            if ($tail === "\n") $separator = '';
+        }
+    }
+
+    $result = file_put_contents($file, $separator . formatDomainLine($domain, $comment), FILE_APPEND | LOCK_EX);
     if ($result === false) {
         return ['success' => false, 'message' => 'Error writing file'];
     }
@@ -82,6 +109,10 @@ function addDomainToFile($file, $domain) {
 }
 
 function deleteDomainFromFile($file, $domain) {
+    if (trim($domain) === '') {
+        return ['success' => false, 'message' => 'Domain is empty'];
+    }
+
     if (!file_exists($file)) {
         return ['success' => false, 'message' => 'File not found'];
     }
@@ -93,9 +124,12 @@ function deleteDomainFromFile($file, $domain) {
 
     $newLines = [];
     $found = false;
+    $domain = trim($domain);
 
     foreach ($lines as $line) {
-        if (trim($line) === trim($domain)) {
+        // Match on the domain only, so an entry with a trailing comment is
+        // still deletable.
+        if (parseDomainLine($line)['domain'] === $domain) {
             $found = true;
             continue;
         }
@@ -128,6 +162,50 @@ function deleteDomainFromFile($file, $domain) {
     }
 }
 
+/**
+ * Replaces the trailing comment of an existing entry. Comments are invisible to
+ * Tinyproxy's filter parser, so this never needs a proxy restart.
+ */
+function setDomainCommentInFile($file, $domain, $comment) {
+    $domain = trim($domain);
+    $comment = sanitizeDomainComment($comment);
+
+    if ($domain === '') {
+        return ['success' => false, 'message' => 'Domain is empty'];
+    }
+
+    if (!file_exists($file)) {
+        return ['success' => false, 'message' => 'File not found'];
+    }
+
+    $lines = file($file, FILE_IGNORE_NEW_LINES);
+    if ($lines === false) {
+        return ['success' => false, 'message' => 'Error reading file'];
+    }
+
+    $found = false;
+    foreach ($lines as $i => $line) {
+        if (parseDomainLine($line)['domain'] === $domain) {
+            $lines[$i] = formatDomainLine($domain, $comment);
+            $found = true;
+        }
+    }
+
+    if (!$found) {
+        return ['success' => false, 'message' => 'Domain not found'];
+    }
+
+    if (file_put_contents($file, implode("\n", $lines) . "\n", LOCK_EX) === false) {
+        return ['success' => false, 'message' => 'Error writing file'];
+    }
+
+    return [
+        'success' => true,
+        'message' => $comment === '' ? 'Comment removed' : 'Comment saved',
+        'comment' => $comment
+    ];
+}
+
 function addDomain($domain) {
     global $file;
     return addDomainToFile($file, $domain);
@@ -138,12 +216,16 @@ function deleteDomain($domain) {
     return deleteDomainFromFile($file, $domain);
 }
 
-function addAllowedDomain($domain) {
-    return addDomainToFile('/app/allowed-domains.txt', $domain);
+function addAllowedDomain($domain, $comment = '') {
+    return addDomainToFile('/app/allowed-domains.txt', $domain, $comment);
 }
 
 function deleteAllowedDomain($domain) {
     return deleteDomainFromFile('/app/allowed-domains.txt', $domain);
+}
+
+function setAllowedDomainComment($domain, $comment) {
+    return setDomainCommentInFile('/app/allowed-domains.txt', $domain, $comment);
 }
 
 function getStats() {
@@ -385,7 +467,7 @@ function deleteNoproxy($entry) {
     return $result;
 }
 
-function getTraffic($lines = 200) {
+function getTraffic($lines = 200, $container = '') {
     $logFile = '/var/log/tinyproxy/tinyproxy.log';
 
     if (!file_exists($logFile)) {
@@ -405,15 +487,21 @@ function getTraffic($lines = 200) {
     $allTraffic = parseTinyproxyLogLines($logLines);
     $allTraffic = array_reverse($allTraffic);
 
-    // Filter noise before capping to 50, so genuinely useful entries aren't crowded out
-    // by noisy ones that just get hidden anyway.
+    // Filter noise (and, if requested, restrict to one workspace/container) before capping
+    // to 50, so genuinely useful entries aren't crowded out by ones that just get hidden anyway.
     $filters = getNoiseFilters();
+    $container = trim((string)$container);
     $traffic = [];
     $hiddenByNoiseFilter = 0;
     foreach ($allTraffic as $entry) {
         if (isNoiseFiltered($entry, $filters)) {
             $hiddenByNoiseFilter++;
-        } elseif (count($traffic) < 50) {
+            continue;
+        }
+        if ($container !== '' && extractContainerLabel($entry['source'] ?? '') !== $container) {
+            continue;
+        }
+        if (count($traffic) < 50) {
             $traffic[] = $entry;
         }
     }
@@ -806,12 +894,19 @@ switch ($action) {
 
     case 'add_allowed_domain':
         $domain = $data['domain'] ?? '';
-        echo json_encode(addAllowedDomain($domain));
+        $comment = $data['comment'] ?? '';
+        echo json_encode(addAllowedDomain($domain, $comment));
         break;
 
     case 'delete_allowed_domain':
         $domain = $data['domain'] ?? '';
         echo json_encode(deleteAllowedDomain($domain));
+        break;
+
+    case 'set_allowed_domain_comment':
+        $domain = $data['domain'] ?? '';
+        $comment = $data['comment'] ?? '';
+        echo json_encode(setAllowedDomainComment($domain, $comment));
         break;
 
     case 'get_noise_filters':
@@ -834,9 +929,14 @@ switch ($action) {
         
     case 'traffic':
         $lines = $data['lines'] ?? 100;
-        echo json_encode(getTraffic($lines));
+        $container = $data['container'] ?? '';
+        echo json_encode(getTraffic($lines, $container));
         break;
-        
+
+    case 'get_traffic_containers':
+        echo json_encode(['success' => true, 'containers' => getKnownContainerLabels()]);
+        break;
+
     case 'get_upstream':
         echo json_encode(getUpstream());
         break;

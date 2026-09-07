@@ -1,3 +1,4 @@
+<?php require_once __DIR__ . '/domain-filter.php'; ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,6 +9,12 @@
     <link rel="stylesheet" href="style.css?v=<?php echo filemtime(__DIR__ . '/style.css'); ?>">
 </head>
 <body>
+    <!-- Theme Toggle Button -->
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
+        <span class="theme-toggle-icon" id="theme-icon">🌙</span>
+        <span class="theme-toggle-text" id="theme-text">Dark</span>
+    </button>
+
     <div class="container">
         <h1>🔒 Tinyproxy Domain Manager</h1>
         
@@ -85,7 +92,7 @@
 
             <!-- Noise Filter Section (server-side, applies for everyone) -->
             <div class="traffic-filter-section" id="noise-filter-section">
-                <div class="filter-header" style="background: linear-gradient(135deg, #64748b 0%, #475569 100%);">
+                <div class="filter-header filter-header-alt">
                     <h3>🔇 Noise Filter (server-wide)</h3>
                     <button class="btn-toggle-filter" onclick="toggleNoiseFilterPanel()">
                         <span id="noise-filter-toggle-icon">▼</span> <span id="noise-filter-count">(0 filters)</span>
@@ -96,13 +103,23 @@
                         Hides matching domains/sources from this Live Monitor <strong>and</strong> the Full Log page, for every viewer. The stored traffic history and JSON export still keep every entry - this only affects what's displayed.
                     </p>
                     <div class="filter-input-row">
-                        <input type="text" id="noise-filter-input" placeholder="e.g. coder.example.com or 172.19.0.1" />
+                        <input type="text" id="noise-filter-input" placeholder="e.g. coder.kloske.eu or 172.19.0.1" />
                         <button class="btn-add" onclick="addNoiseFilter()">Add</button>
                     </div>
                     <div id="noise-filter-list" class="filtered-domains-list">
                         <!-- Dynamically filled -->
                     </div>
                 </div>
+            </div>
+
+            <div class="container-select-row">
+                <form onsubmit="return false;">
+                    <label for="live-container-select">Workspace/container:</label>
+                    <select id="live-container-select" onchange="onContainerFilterChange()">
+                        <option value="">All containers</option>
+                    </select>
+                    <a href="#" class="btn-clear-filters" id="live-container-clear" style="display: none; text-decoration: none;" onclick="clearContainerFilter(); return false;">Clear</a>
+                </form>
             </div>
 
             <div id="traffic-list">
@@ -159,12 +176,14 @@
                     <input type="text" id="new-domain" placeholder="e.g. ^.*example\.com$" required>
                     <button type="submit" class="btn-add">Add</button>
                 </form>
-                <p class="help-text" style="margin-top: 10px;">
-                    <strong>Regex Patterns:</strong><br>
-                    • <code>^.*example\.com$</code> - Blocks all subdomains of example.com<br>
-                    • <code>^.*\.ads\..*$</code> - Blocks all domains with "ads"<br>
-                    • <code>^facebook\.com$</code> - Blocks only exact facebook.com
-                </p>
+                <div class="help-text" style="margin-top: 10px;">
+                    <strong>Regex Patterns:</strong>
+                    <ul class="regex-examples">
+                        <li><code>^.*example\.com$</code> Blocks all subdomains of example.com</li>
+                        <li><code>^.*\.ads\..*$</code> Blocks all domains with "ads"</li>
+                        <li><code>^facebook\.com$</code> Blocks only exact facebook.com</li>
+                    </ul>
+                </div>
             </div>
         </div>
 
@@ -177,13 +196,28 @@
                     $lines = file($allowedDomainsFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
                     $hasContent = false;
                     foreach ($lines as $line) {
-                        $line = trim($line);
-                        if (empty($line) || substr($line, 0, 1) === '#') continue;
+                        // An empty domain means the line is blank or a full-line comment
+                        $parsed = parseDomainLine($line);
+                        if ($parsed['domain'] === '') continue;
                         $hasContent = true;
-                        $escapedLine = htmlspecialchars($line, ENT_QUOTES, 'UTF-8');
-                        echo "<div class='domain-item'>";
-                        echo "<span class='domain'>$escapedLine</span>";
-                        echo "<button class='btn-delete' onclick='deleteAllowedDomain(\"" . addslashes($escapedLine) . "\")'>Delete</button>";
+                        $escapedDomain = htmlspecialchars($parsed['domain'], ENT_QUOTES, 'UTF-8');
+                        $escapedComment = htmlspecialchars($parsed['comment'], ENT_QUOTES, 'UTF-8');
+                        $commentClass = $parsed['comment'] === '' ? 'domain-comment empty' : 'domain-comment';
+                        $commentText = $parsed['comment'] === '' ? 'No comment' : $escapedComment;
+                        echo "<div class='domain-item' data-domain=\"$escapedDomain\" data-comment=\"$escapedComment\">";
+                        echo "<div class='domain-main'>";
+                        echo "<span class='domain'>$escapedDomain</span>";
+                        echo "<span class='$commentClass'>$commentText</span>";
+                        echo "</div>";
+                        echo "<div class='domain-actions'>";
+                        echo "<button class='btn-comment' data-action='edit-comment' title='Add or edit a comment'>💬 Comment</button>";
+                        echo "<button class='btn-delete' onclick='deleteAllowedDomain(\"" . addslashes($escapedDomain) . "\")'>Delete</button>";
+                        echo "</div>";
+                        echo "<div class='comment-edit' hidden>";
+                        echo "<input type='text' class='comment-input' maxlength='200' placeholder='e.g. needed for git clone'>";
+                        echo "<button class='btn-add' data-action='save-comment'>Save</button>";
+                        echo "<button class='btn-cancel' data-action='cancel-comment'>Cancel</button>";
+                        echo "</div>";
                         echo "</div>";
                     }
                     if (!$hasContent) {
@@ -198,10 +232,12 @@
                 <h3 style="margin-bottom: 12px;">Add Domain</h3>
                 <form id="add-allowed-form">
                     <input type="text" id="new-allowed-domain" placeholder="e.g. ^.*\.github\.com$" required>
+                    <input type="text" id="new-allowed-comment" maxlength="200" placeholder="Comment (optional), e.g. needed for git clone">
                     <button type="submit" class="btn-add">Add</button>
                 </form>
                 <p class="help-text" style="margin-top: 10px;">
                     Only enforced when Domain Filter Mode is <strong>Allow only listed domains</strong> - every other domain is blocked.
+                    Comments are stored after a <code>#</code> on the same line and are ignored by Tinyproxy, so editing one never restarts the proxy.
                 </p>
             </div>
         </div>
@@ -293,8 +329,43 @@
     </div>
 
     <script>
+        // Theme Management
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme') || 'light';
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeUI(newTheme);
+        }
+        
+        function updateThemeUI(theme) {
+            const icon = document.getElementById('theme-icon');
+            const text = document.getElementById('theme-text');
+            
+            if (theme === 'dark') {
+                icon.textContent = '🌙';
+                text.textContent = 'Dark';
+            } else {
+                icon.textContent = '☀️';
+                text.textContent = 'Light';
+            }
+        }
+        
+        // Load saved theme on page load
+        function loadTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeUI(savedTheme);
+        }
+        
+        // Initialize theme
+        loadTheme();
+
         let refreshInterval = null;
         let domainFilters = []; // Store filtered domains
+        let trafficContainerFilter = ''; // Selected workspace/container (server-side filtered)
 
         // Notification system
         function showNotification(message, type = 'success') {
@@ -427,6 +498,43 @@
             html += '</div>';
             
             listDiv.innerHTML = html;
+        }
+
+        // Workspace/container filter (server-side, restricts which entries the Live Monitor
+        // fetches - shares the same set of choices as the Full Log page's dropdown)
+        async function loadTrafficContainers() {
+            try {
+                const response = await fetch('api.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'get_traffic_containers'})
+                });
+                const result = await safeJsonParse(response);
+                if (!result.success) return;
+
+                const select = document.getElementById('live-container-select');
+                const current = select.value;
+                select.innerHTML = '<option value="">All containers</option>' +
+                    result.containers.map(c => '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>').join('');
+                if (result.containers.includes(current)) {
+                    select.value = current;
+                }
+            } catch (error) {
+                console.error('Error loading containers:', error);
+            }
+        }
+
+        function onContainerFilterChange() {
+            trafficContainerFilter = document.getElementById('live-container-select').value;
+            document.getElementById('live-container-clear').style.display = trafficContainerFilter ? 'inline-block' : 'none';
+            refreshTraffic();
+        }
+
+        function clearContainerFilter() {
+            trafficContainerFilter = '';
+            document.getElementById('live-container-select').value = '';
+            document.getElementById('live-container-clear').style.display = 'none';
+            refreshTraffic();
         }
 
         // Noise Filter (server-wide, affects Live Monitor + Full Log page for everyone)
@@ -610,6 +718,7 @@
                 });
                 const result = await safeJsonParse(response);
                 if (result.success) {
+                    document.getElementById('new-domain').value = '';
                     // Show restart notification if tinyproxy was restarted
                     if (result.restart) {
                         showNotification('✓ Domain added and Tinyproxy restarted!', 'success');
@@ -663,6 +772,7 @@
         document.getElementById('add-allowed-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const domain = document.getElementById('new-allowed-domain').value.trim();
+            const comment = document.getElementById('new-allowed-comment').value.trim();
 
             if (!domain) {
                 alert('Please enter a domain');
@@ -677,10 +787,12 @@
                 const response = await fetch('api.php', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({action: 'add_allowed_domain', domain: domain})
+                    body: JSON.stringify({action: 'add_allowed_domain', domain: domain, comment: comment})
                 });
                 const result = await safeJsonParse(response);
                 if (result.success) {
+                    document.getElementById('new-allowed-domain').value = '';
+                    document.getElementById('new-allowed-comment').value = '';
                     if (result.restart) {
                         showNotification('✓ Domain added and Tinyproxy restarted!', 'success');
                     } else {
@@ -696,6 +808,87 @@
                 alert('Error adding: ' + error.message);
             }
         });
+
+        // Comments on allowed domains. Tinyproxy ignores everything after the
+        // "#" on a filter line, so saving one needs no restart and no reload.
+        function openCommentEditor(item) {
+            const editor = item.querySelector('.comment-edit');
+            const input = item.querySelector('.comment-input');
+            input.value = item.dataset.comment || '';
+            editor.hidden = false;
+            item.classList.add('editing');
+            input.focus();
+            input.select();
+        }
+
+        function closeCommentEditor(item) {
+            item.querySelector('.comment-edit').hidden = true;
+            item.classList.remove('editing');
+        }
+
+        async function saveAllowedDomainComment(item) {
+            const domain = item.dataset.domain;
+            const input = item.querySelector('.comment-input');
+            const saveBtn = item.querySelector('[data-action="save-comment"]');
+            const comment = input.value.trim();
+
+            saveBtn.disabled = true;
+            try {
+                const response = await fetch('api.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'set_allowed_domain_comment', domain: domain, comment: comment})
+                });
+                const result = await safeJsonParse(response);
+                if (result.success) {
+                    // The server normalizes the comment (whitespace, length)
+                    const saved = typeof result.comment === 'string' ? result.comment : comment;
+                    const label = item.querySelector('.domain-comment');
+                    item.dataset.comment = saved;
+                    label.textContent = saved === '' ? 'No comment' : saved;
+                    label.classList.toggle('empty', saved === '');
+                    closeCommentEditor(item);
+                    showNotification(saved === '' ? '✓ Comment removed' : '✓ Comment saved', 'success');
+                } else {
+                    alert('Error: ' + result.message);
+                }
+            } catch (error) {
+                alert('Error saving comment: ' + error.message);
+            } finally {
+                saveBtn.disabled = false;
+            }
+        }
+
+        const allowedList = document.getElementById('allowed-list');
+        if (allowedList) {
+            allowedList.addEventListener('click', (e) => {
+                const button = e.target.closest('[data-action]');
+                if (!button) return;
+                const item = button.closest('.domain-item');
+                if (!item) return;
+
+                if (button.dataset.action === 'edit-comment') {
+                    openCommentEditor(item);
+                } else if (button.dataset.action === 'save-comment') {
+                    saveAllowedDomainComment(item);
+                } else if (button.dataset.action === 'cancel-comment') {
+                    closeCommentEditor(item);
+                }
+            });
+
+            allowedList.addEventListener('keydown', (e) => {
+                if (!e.target.classList.contains('comment-input')) return;
+                const item = e.target.closest('.domain-item');
+
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveAllowedDomainComment(item);
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closeCommentEditor(item);
+                }
+            });
+        }
 
         // Domain Filter Mode
         async function loadDomainFilterMode() {
@@ -778,7 +971,7 @@
                 const response = await fetch('api.php', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({action: 'traffic', lines: 100})
+                    body: JSON.stringify({action: 'traffic', lines: 100, container: trafficContainerFilter})
                 });
                 const result = await safeJsonParse(response);
                 
@@ -790,7 +983,9 @@
                 }
                 
                 if (result.traffic.length === 0) {
-                    trafficList.innerHTML = '<p class="no-traffic">No traffic recorded yet. Use the proxy to see traffic.</p>';
+                    trafficList.innerHTML = trafficContainerFilter
+                        ? '<p class="no-traffic">No traffic recorded yet for "' + escapeHtml(trafficContainerFilter) + '".</p>'
+                        : '<p class="no-traffic">No traffic recorded yet. Use the proxy to see traffic.</p>';
                     return;
                 }
                 
@@ -1314,6 +1509,7 @@
         loadClientPolicy();
         loadDomainFilterMode();
         loadNoiseFilters();
+        loadTrafficContainers();
         refreshContainers();
         refreshTraffic();
         
