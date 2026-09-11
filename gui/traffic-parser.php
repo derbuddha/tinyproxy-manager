@@ -9,6 +9,25 @@ function getMonitoredNetwork() {
     return getenv('NETWORK_NAME') ?: 'codersrv_default';
 }
 
+// Tinyproxy logs the raw HTTP request line, so the captured target still carries the
+// trailing protocol version ("CONNECT example.com:443 HTTP/1.1"). That suffix defeats
+// parse_url(), which then reports no host at all and leaves the whole raw string as the
+// "domain" - useless for pasting into the allow list. Strip it before anything else looks
+// at the target.
+function stripRequestHttpVersion($target) {
+    return preg_replace('#\s+HTTP/\d(?:\.\d)?\s*$#i', '', trim((string)$target));
+}
+
+// Reduces a request target to a bare hostname suitable for the allow list: drops the
+// protocol version, any scheme/path, and the port. Absolute URLs ("http://host/path"),
+// CONNECT authorities ("host:443") and bare hostnames all collapse to just "host".
+function extractRequestDomain($target) {
+    $target = stripRequestHttpVersion($target);
+    if ($target === '') return '';
+    $host = parse_url($target, PHP_URL_HOST);
+    return ($host !== null && $host !== false && $host !== '') ? $host : $target;
+}
+
 function parseTinyproxyLogLines(array $logLines) {
     $traffic = [];
     $sourceIpByPid = [];
@@ -32,22 +51,27 @@ function parseTinyproxyLogLines(array $logLines) {
 
         $sourceIp = $sourceIpByPid[$pid] ?? '';
         $entry = null;
+        // Seed for the entry id, taken from the *uncleaned* target so ids stay byte-identical
+        // to those written by earlier versions - ingestTrafficHistory() locates its resume
+        // point by matching the last stored id, and a changed formula would re-archive the
+        // whole tail window as if it were new.
+        $idSeed = null;
 
         if (preg_match('/Request.*:\s+(GET|POST|CONNECT|HEAD|PUT|DELETE|OPTIONS|PATCH)\s+(.+)/', $message, $reqMatches)) {
             $method = $reqMatches[1];
-            $url = $reqMatches[2];
-            $domain = parse_url($url)['host'] ?? $url;
+            $rawTarget = $reqMatches[2];
+            $idSeed = (parse_url($rawTarget)['host'] ?? $rawTarget) . $rawTarget . $sourceIp;
             $entry = [
-                'timestamp' => $timestamp, 'method' => $method, 'url' => $url,
-                'domain' => $domain, 'source' => $sourceIp, 'level' => $level
+                'timestamp' => $timestamp, 'method' => $method, 'url' => stripRequestHttpVersion($rawTarget),
+                'domain' => extractRequestDomain($rawTarget), 'source' => $sourceIp, 'level' => $level
             ];
         } elseif (strpos($message, 'Proxying refused') !== false || strpos($message, 'filtered') !== false) {
             if (preg_match('/Proxying refused.*"(.+?)"/', $message, $deniedMatches)) {
-                $url = $deniedMatches[1];
-                $domain = parse_url($url)['host'] ?? $url;
+                $rawTarget = $deniedMatches[1];
+                $idSeed = (parse_url($rawTarget)['host'] ?? $rawTarget) . $rawTarget . $sourceIp;
                 $entry = [
-                    'timestamp' => $timestamp, 'method' => 'BLOCKED', 'url' => $url,
-                    'domain' => $domain, 'source' => $sourceIp, 'level' => 'BLOCKED'
+                    'timestamp' => $timestamp, 'method' => 'BLOCKED', 'url' => stripRequestHttpVersion($rawTarget),
+                    'domain' => extractRequestDomain($rawTarget), 'source' => $sourceIp, 'level' => 'BLOCKED'
                 ];
             }
         } elseif (preg_match('/Unauthorized connection from "([^"]+)" \[([^\]]+)\]/', $message, $unauthMatches)) {
@@ -60,7 +84,8 @@ function parseTinyproxyLogLines(array $logLines) {
         if ($entry !== null) {
             // Stable-enough identity for a log line, used to find where a previous ingestion
             // run left off so the same entry isn't archived twice.
-            $entry['id'] = $pid . '_' . $timestamp . '_' . $level . '_' . substr(md5($entry['domain'] . $entry['url'] . $entry['source']), 0, 8);
+            $seed = $idSeed ?? ($entry['domain'] . $entry['url'] . $entry['source']);
+            $entry['id'] = $pid . '_' . $timestamp . '_' . $level . '_' . substr(md5($seed), 0, 8);
             $traffic[] = $entry;
         }
     }

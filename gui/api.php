@@ -300,12 +300,82 @@ function getUpstream() {
     ];
 }
 
+// A NoProxy entry is written verbatim into tinyproxy.conf as: no upstream "<entry>"
+// Anything outside this charset (quotes, whitespace, newlines) could close the
+// string and inject arbitrary directives - e.g. an Allow rule - so it is rejected.
+// Covers hostnames, leading-dot suffixes and CIDR: localhost, .local, 192.168.0.0/16
+function isValidNoproxyEntry($entry) {
+    return (bool) preg_match('/^[A-Za-z0-9._\\-\\/]+$/', trim($entry));
+}
+
+// Same reasoning for the upstream host. IPv6 is not supported: getUpstream()
+// splits host from port on the first colon.
+function isValidUpstreamHost($host) {
+    return (bool) preg_match('/^[A-Za-z0-9._-]+$/', trim($host));
+}
+
+// Reads the NoProxy list out of a tinyproxy.conf. While the upstream proxy is
+// enabled the entries are live "no upstream" lines; while it is disabled they
+// are parked as "# SAVED no upstream" lines so a disable/enable round-trip
+// does not lose them.
+function getNoproxyEntries($content) {
+    $entries = [];
+    if (preg_match_all('/^\s*no\s+upstream\s+"?([^"\n]+)"?\s*$/mi', $content, $matches)) {
+        $entries = array_map('trim', $matches[1]);
+    }
+    if (empty($entries) && preg_match_all('/^\s*#\s*SAVED\s+no\s+upstream\s+"?([^"\n]+)"?\s*$/mi', $content, $matches)) {
+        $entries = array_map('trim', $matches[1]);
+    }
+    return array_values(array_filter($entries, 'isValidNoproxyEntry'));
+}
+
+// One-time migration for configs written before the UPSTREAM markers existed:
+// strips the legacy upstream directives and wraps the section in
+// UPSTREAM_START/END, matching the DOMAIN_FILTER and CONTAINER_ALLOW blocks.
+function migrateUpstreamMarkers($content) {
+    $lines = explode("\n", $content);
+    $newLines = [];
+    $inUpstreamSection = false;
+
+    foreach ($lines as $line) {
+        if (preg_match('/# Managed by the Tinyproxy GUI/', $line)) {
+            $inUpstreamSection = true;
+            $newLines[] = $line;
+            $newLines[] = '# UPSTREAM_START';
+            $newLines[] = '# UPSTREAM_END';
+            continue;
+        }
+
+        if ($inUpstreamSection) {
+            // Drop legacy directives and their example comments
+            if (preg_match('/^\s*(#\s*)?(SAVED\s+)?(Upstream\s+(http\s+)?\S+:\d+|no\s+upstream\s+.+)/i', $line)) {
+                continue;
+            }
+            if (preg_match('/^\s*#\s*(no upstream proxy for internal|No proxy example|No 192\.168)/i', $line)) {
+                continue;
+            }
+            // A real directive ends the section
+            if (preg_match('/^[A-Za-z]/', $line)) {
+                $inUpstreamSection = false;
+            }
+        }
+
+        $newLines[] = $line;
+    }
+
+    return implode("\n", $newLines);
+}
+
 function setUpstream($enabled, $host, $port, $noproxy = null) {
     $configFile = '/app/tinyproxy.conf';
     
     if ($enabled) {
         if (empty($host) || empty($port)) {
             return ['success' => false, 'message' => 'Host and port are required'];
+        }
+        
+        if (!isValidUpstreamHost($host)) {
+            return ['success' => false, 'message' => 'Invalid host (allowed: letters, digits, dot, hyphen, underscore)'];
         }
         
         if (!is_numeric($port) || $port < 1 || $port > 65535) {
@@ -318,61 +388,47 @@ function setUpstream($enabled, $host, $port, $noproxy = null) {
         return ['success' => false, 'message' => 'Error reading configuration'];
     }
     
-    // Remove existing Upstream and No lines (active or commented)
-    $lines = explode("\n", $content);
-    $newLines = [];
-    $inUpstreamSection = false;
+    // Preserve the existing NoProxy list unless the caller passes one explicitly.
+    // Without this, saving a changed host/port would silently drop every entry.
+    // An explicitly passed empty array still means "clear the list".
+    if ($noproxy === null) {
+        $noproxy = getNoproxyEntries($content);
+    }
+    $noproxy = array_values(array_filter(array_map('trim', $noproxy), 'isValidNoproxyEntry'));
     
-    foreach ($lines as $line) {
-        // Detect upstream section
-        if (preg_match('/# Upstream Proxy Configuration/', $line)) {
-            $inUpstreamSection = true;
-            $newLines[] = $line;
-            continue;
-        }
-        
-        // If we're in upstream section, skip Upstream and no upstream directives
-        if ($inUpstreamSection) {
-            if (preg_match('/^\s*(#\s*)?(Upstream\s+(http\s+)?\S+:\d+|no\s+upstream\s+.+)/i', $line)) {
-                continue;
-            }
-            // Exit upstream section when we hit a blank line followed by non-comment
-            if (empty(trim($line)) && !empty($newLines)) {
-                $inUpstreamSection = false;
-            }
-        }
-        
-        $newLines[] = $line;
+    if (strpos($content, '# UPSTREAM_START') === false) {
+        $content = migrateUpstreamMarkers($content);
+    }
+    if (strpos($content, '# UPSTREAM_START') === false) {
+        return ['success' => false, 'message' => 'UPSTREAM markers not found in tinyproxy.conf'];
     }
     
     // Build upstream section
-    $content = implode("\n", $newLines);
-    
-    $upstreamBlock = '';
+    $blockLines = [];
     if ($enabled) {
-        $upstreamBlock = "Upstream " . $host . ":" . $port;
-        
-        // Add noproxy entries if provided
-        if ($noproxy !== null && is_array($noproxy)) {
-            $upstreamBlock .= "\n# no upstream proxy for internal websites and unqualified hosts";
+        $blockLines[] = 'Upstream ' . $host . ':' . $port;
+        if (!empty($noproxy)) {
+            $blockLines[] = '# no upstream proxy for internal websites and unqualified hosts';
             foreach ($noproxy as $entry) {
-                $entry = trim($entry);
-                if (!empty($entry)) {
-                    $upstreamBlock .= "\nno upstream \"" . $entry . "\"";
-                }
+                $blockLines[] = 'no upstream "' . $entry . '"';
             }
         }
     } else {
-        $upstreamBlock = "# Upstream proxy.example.com:3128";
+        // Park the entries as comments so enabling the upstream proxy again restores them
+        $blockLines[] = '# Upstream proxy.example.com:3128';
+        foreach ($noproxy as $entry) {
+            $blockLines[] = '# SAVED no upstream "' . $entry . '"';
+        }
     }
+    $upstreamBlock = implode("\n", $blockLines);
     
-    $upstreamBlock .= "\n# No proxy example: no upstream \".internal.example.com\"\n# No 192.168.0.0/16";
-    
-    // Replace the upstream section marker - find and replace everything after "# Managed by the Tinyproxy GUI"
-    // until we hit an empty line or end of upstream section
-    $content = preg_replace(
-        '/(# Managed by the Tinyproxy GUI\n)(?:.*?\n)*?((?=\n\n)|(?=\n[A-Z])|$)/s',
-        "$1" . $upstreamBlock . "\n",
+    // Replace only what sits between the markers. preg_replace_callback avoids
+    // having to escape $ and backslashes coming from host/entry values.
+    $content = preg_replace_callback(
+        '/(# UPSTREAM_START\n).*?(# UPSTREAM_END)/s',
+        function ($m) use ($upstreamBlock) {
+            return $m[1] . $upstreamBlock . "\n" . $m[2];
+        },
         $content
     );
     
@@ -392,6 +448,10 @@ function addNoproxy($entry) {
     
     if (empty($entry)) {
         return ['success' => false, 'message' => 'Entry is empty'];
+    }
+    
+    if (!isValidNoproxyEntry($entry)) {
+        return ['success' => false, 'message' => 'Invalid entry (allowed: letters, digits, dot, hyphen, underscore, slash - e.g. .local or 192.168.0.0/16)'];
     }
     
     // Get current upstream configuration

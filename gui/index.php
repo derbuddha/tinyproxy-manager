@@ -1031,8 +1031,8 @@
                         if (item.source && item.source !== '') {
                             html += '<div class="traffic-source">📍 ' + escapeHtml(item.source) + '</div>';
                         }
-                        html += '<div class="traffic-domain">➜ ' + escapeHtml(item.domain) + '</div>';
-                        html += '<div class="traffic-full-url">' + escapeHtml(item.url) + '</div>';
+                        html += '<div class="traffic-domain">➜ <span class="copyable" title="Click to copy domain">' + escapeHtml(item.domain) + '</span></div>';
+                        html += '<div class="traffic-full-url"><span class="copyable" title="Click to copy full URL">' + escapeHtml(item.url) + '</span></div>';
                     }
                     html += '</div>';
                     html += '</div>';
@@ -1052,6 +1052,52 @@
             div.textContent = text;
             return div.innerHTML;
         }
+
+        // Click-to-copy for domains / URLs in the live traffic monitor
+        async function copyToClipboard(text) {
+            if (navigator.clipboard && window.isSecureContext) {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    return true;
+                } catch (e) {
+                    // Fall through to the legacy path below
+                }
+            }
+            // Fallback for plain-HTTP setups where the Clipboard API is unavailable
+            const helper = document.createElement('textarea');
+            helper.value = text;
+            helper.setAttribute('readonly', '');
+            helper.style.position = 'fixed';
+            helper.style.top = '-1000px';
+            helper.style.opacity = '0';
+            document.body.appendChild(helper);
+            helper.select();
+            helper.setSelectionRange(0, helper.value.length);
+            let ok = false;
+            try {
+                ok = document.execCommand('copy');
+            } catch (e) {
+                ok = false;
+            }
+            helper.remove();
+            return ok;
+        }
+
+        document.getElementById('traffic-list').addEventListener('click', async function(event) {
+            const target = event.target.closest('.copyable');
+            if (!target) return;
+
+            const value = target.textContent.trim();
+            if (!value) return;
+
+            if (await copyToClipboard(value)) {
+                target.classList.add('copied');
+                setTimeout(() => target.classList.remove('copied'), 900);
+                showNotification('📋 Copied: ' + value);
+            } else {
+                showNotification('Could not copy to clipboard', 'error');
+            }
+        });
 
         // Auto-refresh functionality
         document.getElementById('auto-refresh').addEventListener('change', function() {
@@ -1232,6 +1278,16 @@
         // Toggle upstream fields visibility
         document.getElementById('upstream-enabled').addEventListener('change', function() {
             const fields = document.getElementById('upstream-fields');
+
+            const confirmMsg = this.checked
+                ? 'Enable Upstream Proxy?\n\nAll traffic will be forwarded to a second proxy.\nEnter host and port, then click "Save Upstream Proxy".'
+                : 'Disable Upstream Proxy?\n\nTraffic will go directly to the internet again.\nYour NoProxy entries are kept and restored when you enable it again.';
+
+            if (!confirm(confirmMsg)) {
+                this.checked = !this.checked; // Revert toggle
+                return;
+            }
+
             if (this.checked) {
                 fields.style.display = 'block';
             } else {
