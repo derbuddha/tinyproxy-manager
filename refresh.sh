@@ -7,7 +7,6 @@
 #   - Resets allowed-domains.txt to its template comments
 #   - Resets the noise-filter list to its template comments
 #   - Clears tinyproxy.conf's Allow list back to just localhost
-#   - Replaces the personal "coder.kloske.eu" example with a generic one
 #   - Deletes traffic-history.json (real captured traffic log)
 #
 # Run from the repo root: ./refresh.sh
@@ -58,12 +57,5 @@ awk '
   skip { next }
   { print }
 ' tinyproxy.conf > tinyproxy.conf.tmp && mv tinyproxy.conf.tmp tinyproxy.conf
-
-echo "Replacing personal example domain references ..."
-for f in README.md gui/index.php gui/history.php; do
-  if [ -f "$f" ]; then
-    sed -i 's/coder\.kloske\.eu/coder.example.com/g' "$f"
-  fi
-done
 
 echo "Done. Review the changes with 'git diff' before committing."

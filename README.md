@@ -151,7 +151,7 @@ Two dedicated pages built on top of that archive:
 
 Some traffic is just noise - e.g. a self-hosted service phoning its own health-check endpoint every few seconds - and clutters both the Live Monitor and the Full Log page. The **🔇 Noise Filter** panel (below the Live Monitor's local domain filter) lets you suppress matching entries for *every* viewer, backed by `traffic-noise-filters.txt`.
 
-- Matches case-insensitively against both the request domain and the source IP/name (substring match) - e.g. `coder.kloske.eu` or `172.19.0.1`.
+- Matches case-insensitively against both the request domain and the source IP/name (substring match) - e.g. `coder.example.com` or `172.19.0.1`.
 - Display-only: `traffic-history.json` still archives every entry untouched, so the stored count and JSON export stay complete - only what's *shown* on the Live Monitor and Full Log page is affected. Both pages show a "N hidden by noise filter" count so suppressed traffic is never silently invisible.
 - This is different from the **🔍 Local Domain Filter** also on the Live Monitor card: that one is per-browser (`localStorage`), doesn't touch the Full Log page, and is meant for quick one-off decluttering rather than a permanent, shared suppression.
 

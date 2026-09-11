@@ -97,7 +97,7 @@ function h($s) {
                         Hides matching domains/sources from this page <strong>and</strong> the dashboard's Live Monitor, for every viewer. Matches the request domain or the source IP/name (substring, case-insensitive). The stored history and JSON export still keep every entry.
                     </p>
                     <div class="filter-input-row">
-                        <input type="text" id="noise-filter-input" placeholder="e.g. coder.kloske.eu or 172.19.0.1" />
+                        <input type="text" id="noise-filter-input" placeholder="e.g. coder.example.com or 172.19.0.1" />
                         <button class="btn-add" onclick="addNoiseFilter()">Add</button>
                     </div>
                     <div id="noise-filter-list" class="filtered-domains-list">
