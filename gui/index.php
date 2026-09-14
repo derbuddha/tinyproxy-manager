@@ -118,6 +118,7 @@
                     <select id="live-container-select" onchange="onContainerFilterChange()">
                         <option value="">All containers</option>
                     </select>
+                    <button type="button" class="btn-blocked-filter" id="blocked-only-btn" aria-pressed="false" title="Show only blocked requests" onclick="toggleBlockedOnlyFilter()">BLOCKED</button>
                     <a href="#" class="btn-clear-filters" id="live-container-clear" style="display: none; text-decoration: none;" onclick="clearContainerFilter(); return false;">Clear</a>
                 </form>
             </div>
@@ -366,6 +367,7 @@
         let refreshInterval = null;
         let domainFilters = []; // Store filtered domains
         let trafficContainerFilter = ''; // Selected workspace/container (server-side filtered)
+        let blockedOnlyFilter = false;   // Show only BLOCKED entries in the Live Monitor
 
         // Notification system
         function showNotification(message, type = 'success') {
@@ -534,6 +536,16 @@
             trafficContainerFilter = '';
             document.getElementById('live-container-select').value = '';
             document.getElementById('live-container-clear').style.display = 'none';
+            refreshTraffic();
+        }
+
+        // Blocked-only filter (client-side, keeps only entries the proxy rejected)
+        function toggleBlockedOnlyFilter() {
+            blockedOnlyFilter = !blockedOnlyFilter;
+            const btn = document.getElementById('blocked-only-btn');
+            btn.classList.toggle('active', blockedOnlyFilter);
+            btn.setAttribute('aria-pressed', blockedOnlyFilter ? 'true' : 'false');
+            btn.title = blockedOnlyFilter ? 'Show all requests' : 'Show only blocked requests';
             refreshTraffic();
         }
 
@@ -990,16 +1002,24 @@
                 }
                 
                 // Apply domain filtering
-                const filteredTraffic = result.traffic.filter(item => !shouldFilterDomain(item.domain));
-                const hiddenCount = result.traffic.length - filteredTraffic.length;
-                
+                const domainFiltered = result.traffic.filter(item => !shouldFilterDomain(item.domain));
+                const hiddenCount = result.traffic.length - domainFiltered.length;
+
+                // Apply the blocked-only toggle on top of the domain filters
+                const filteredTraffic = blockedOnlyFilter
+                    ? domainFiltered.filter(item => item.level === 'BLOCKED')
+                    : domainFiltered;
+
                 if (filteredTraffic.length === 0) {
-                    trafficList.innerHTML = '<p class="no-traffic">All traffic entries are filtered. ' + 
-                        hiddenCount + ' entries hidden by domain filters.</p>';
+                    trafficList.innerHTML = blockedOnlyFilter
+                        ? '<p class="no-traffic">No blocked requests in the current traffic.</p>'
+                        : '<p class="no-traffic">All traffic entries are filtered. ' +
+                          hiddenCount + ' entries hidden by domain filters.</p>';
                     return;
                 }
                 
-                let html = '<div class="traffic-count">📊 <strong>' + filteredTraffic.length + '</strong> Requests shown';
+                let html = '<div class="traffic-count">📊 <strong>' + filteredTraffic.length + '</strong> ' +
+                    (blockedOnlyFilter ? 'Blocked requests shown' : 'Requests shown');
                 if (hiddenCount > 0) {
                     html += ' <span class="filtered-count">(' + hiddenCount + ' filtered out)</span>';
                 }

@@ -1202,6 +1202,50 @@ a.btn-restart, a.btn-sync-allow {
     padding: var(--space-2);
 }
 
+/* Blocked-only toggle - matches the BLOCKED badge in the traffic list */
+.btn-blocked-filter {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* Stretch to the row's height so the button lines up with the select next
+       to it; the min-height mirrors the select's own padding + border for the
+       case where the row wraps and the button ends up on a line of its own. */
+    align-self: stretch;
+    min-height: calc(1.25rem + (var(--space-3) * 2) + 2px);
+    padding: 0 0.75rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.025em;
+    white-space: nowrap;
+    min-width: 85px;
+    text-align: center;
+    cursor: pointer;
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    opacity: 0.75;
+    transition: all 0.2s ease;
+}
+
+.btn-blocked-filter:hover {
+    opacity: 1;
+    background: rgba(239, 68, 68, 0.22);
+}
+
+.btn-blocked-filter.active {
+    opacity: 1;
+    background: rgba(239, 68, 68, 0.3);
+    color: #fecaca;
+    border-color: rgba(239, 68, 68, 0.65);
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+}
+
+.btn-blocked-filter:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.35);
+}
+
 .pagination {
     display: flex;
     justify-content: center;
