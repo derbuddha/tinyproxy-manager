@@ -60,6 +60,7 @@ function h($s) {
     <title>Tinyproxy Manager - Full Traffic Log</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="stylesheet" href="style.css?v=<?php echo filemtime(__DIR__ . '/style.css'); ?>">
+    <script src="searchable-select.js?v=<?php echo filemtime(__DIR__ . '/searchable-select.js'); ?>"></script>
 </head>
 <body>
     <!-- Theme Toggle Button -->
@@ -371,6 +372,7 @@ function h($s) {
         }
 
         loadNoiseFilters();
+        SearchableSelect.enhance('container-select', {placeholder: 'All containers - type to filter'});
     </script>
 </body>
 </html>

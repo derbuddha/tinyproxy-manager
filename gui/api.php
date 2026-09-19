@@ -250,83 +250,92 @@ function getStats() {
     ];
 }
 
+// Upstream routing is opt-in per domain: tinyproxy only forwards a request to
+// the upstream proxy when the requested host matches one of the
+// "upstream <host>:<port> <domain>" rules below. Anything unmatched connects
+// directly, so enabling an upstream proxy without listing a domain changes
+// nothing. (Tinyproxy's catch-all "Upstream <host>:<port>" form - everything
+// upstream except "no upstream" exceptions - is deliberately not written any
+// more; see the legacy branch in parseUpstreamBlock().)
 function getUpstream() {
     $configFile = '/app/tinyproxy.conf';
-    
+
+    $empty = [
+        'success' => true,
+        'enabled' => false,
+        'host' => '',
+        'port' => '',
+        'domains' => []
+    ];
+
     if (!file_exists($configFile)) {
-        return [
-            'success' => true,
-            'enabled' => false,
-            'host' => '',
-            'port' => '',
-            'noproxy' => []
-        ];
+        return $empty;
     }
-    
+
     $content = @file_get_contents($configFile);
     if ($content === false) {
-        return [
-            'success' => true,
-            'enabled' => false,
-            'host' => '',
-            'port' => '',
-            'noproxy' => [],
-            'message' => 'Error reading configuration'
-        ];
+        $empty['message'] = 'Error reading configuration';
+        return $empty;
     }
-    
-    $enabled = false;
-    $host = '';
-    $port = '';
-    $noproxy = [];
-    
-    if (preg_match('/^\s*Upstream\s+([^:\s]+):(\d+)/m', $content, $matches)) {
-        $enabled = true;
-        $host = $matches[1];
-        $port = $matches[2];
-    }
-    
-    // Extract no upstream (noproxy) entries
-    if (preg_match_all('/^\s*no\s+upstream\s+"?([^"\n]+)"?$/mi', $content, $matches)) {
-        $noproxy = array_map('trim', $matches[1]);
-    }
-    
-    return [
-        'success' => true,
-        'enabled' => $enabled,
-        'host' => $host,
-        'port' => $port,
-        'noproxy' => $noproxy
-    ];
+
+    return ['success' => true] + parseUpstreamBlock($content);
 }
 
-// A NoProxy entry is written verbatim into tinyproxy.conf as: no upstream "<entry>"
+// A routed domain is written verbatim into tinyproxy.conf as:
+//   upstream <host>:<port> "<entry>"
 // Anything outside this charset (quotes, whitespace, newlines) could close the
 // string and inject arbitrary directives - e.g. an Allow rule - so it is rejected.
-// Covers hostnames, leading-dot suffixes and CIDR: localhost, .local, 192.168.0.0/16
-function isValidNoproxyEntry($entry) {
+// Covers hostnames, leading-dot suffixes and CIDR: internal.example.com,
+// .corp.local, 192.168.0.0/16
+function isValidUpstreamDomain($entry) {
     return (bool) preg_match('/^[A-Za-z0-9._\\-\\/]+$/', trim($entry));
 }
 
-// Same reasoning for the upstream host. IPv6 is not supported: getUpstream()
-// splits host from port on the first colon.
+// Same reasoning for the upstream host. IPv6 is not supported:
+// parseUpstreamBlock() splits host from port on the last colon.
 function isValidUpstreamHost($host) {
     return (bool) preg_match('/^[A-Za-z0-9._-]+$/', trim($host));
 }
 
-// Reads the NoProxy list out of a tinyproxy.conf. While the upstream proxy is
-// enabled the entries are live "no upstream" lines; while it is disabled they
-// are parked as "# SAVED no upstream" lines so a disable/enable round-trip
-// does not lose them.
-function getNoproxyEntries($content) {
-    $entries = [];
-    if (preg_match_all('/^\s*no\s+upstream\s+"?([^"\n]+)"?\s*$/mi', $content, $matches)) {
-        $entries = array_map('trim', $matches[1]);
+// Reads the upstream proxy and its routed-domain list out of a tinyproxy.conf.
+// While the upstream proxy is enabled, host/port live on a "# UPSTREAM_PROXY"
+// marker and the domains are live "upstream ..." directives; while it is
+// disabled both are parked as "# SAVED ..." lines, so a disable/enable
+// round-trip keeps the configuration.
+function parseUpstreamBlock($content) {
+    $enabled = false;
+    $host = '';
+    $port = '';
+    $domains = [];
+
+    if (preg_match('/^#\s*UPSTREAM_PROXY\s+([A-Za-z0-9._-]+):(\d+)\s*$/mi', $content, $m)) {
+        $enabled = true;
+        $host = $m[1];
+        $port = $m[2];
+    } elseif (preg_match('/^#\s*SAVED\s+UPSTREAM_PROXY\s+([A-Za-z0-9._-]+):(\d+)\s*$/mi', $content, $m)) {
+        $host = $m[1];
+        $port = $m[2];
+    } elseif (preg_match('/^\s*Upstream\s+(?:http\s+)?([A-Za-z0-9._-]+):(\d+)\s*$/mi', $content, $m)) {
+        // Legacy catch-all config: the proxy stays configured, but its routed
+        // domain list starts out empty: "all traffic upstream" is no longer expressible.
+        $enabled = true;
+        $host = $m[1];
+        $port = $m[2];
     }
-    if (empty($entries) && preg_match_all('/^\s*#\s*SAVED\s+no\s+upstream\s+"?([^"\n]+)"?\s*$/mi', $content, $matches)) {
-        $entries = array_map('trim', $matches[1]);
+
+    if (preg_match_all('/^\s*upstream\s+[A-Za-z0-9._-]+:\d+\s+"([^"\n]+)"\s*$/mi', $content, $m)) {
+        $domains = $m[1];
+    } elseif (preg_match_all('/^\s*#\s*SAVED\s+upstream\s+"([^"\n]+)"\s*$/mi', $content, $m)) {
+        $domains = $m[1];
     }
-    return array_values(array_filter($entries, 'isValidNoproxyEntry'));
+    $domains = array_values(array_filter(array_map('trim', $domains), 'isValidUpstreamDomain'));
+
+    return [
+        'enabled' => $enabled,
+        'host' => $host,
+        'port' => $port,
+        'domains' => $domains
+    ];
 }
 
 // One-time migration for configs written before the UPSTREAM markers existed:
@@ -366,7 +375,10 @@ function migrateUpstreamMarkers($content) {
     return implode("\n", $newLines);
 }
 
-function setUpstream($enabled, $host, $port, $noproxy = null) {
+// Writes the upstream section. Routing is opt-in: only $domains are sent
+// through the proxy, everything else goes direct. Passing an empty list is a
+// valid state (proxy configured, nothing routed through it).
+function setUpstream($enabled, $host, $port, $domains = null) {
     $configFile = '/app/tinyproxy.conf';
     
     if ($enabled) {
@@ -388,13 +400,14 @@ function setUpstream($enabled, $host, $port, $noproxy = null) {
         return ['success' => false, 'message' => 'Error reading configuration'];
     }
     
-    // Preserve the existing NoProxy list unless the caller passes one explicitly.
+    // Preserve the existing domain list unless the caller passes one explicitly.
     // Without this, saving a changed host/port would silently drop every entry.
     // An explicitly passed empty array still means "clear the list".
-    if ($noproxy === null) {
-        $noproxy = getNoproxyEntries($content);
+    if ($domains === null) {
+        $current = parseUpstreamBlock($content);
+        $domains = $current['domains'];
     }
-    $noproxy = array_values(array_filter(array_map('trim', $noproxy), 'isValidNoproxyEntry'));
+    $domains = array_values(array_filter(array_map('trim', $domains), 'isValidUpstreamDomain'));
     
     if (strpos($content, '# UPSTREAM_START') === false) {
         $content = migrateUpstreamMarkers($content);
@@ -406,18 +419,20 @@ function setUpstream($enabled, $host, $port, $noproxy = null) {
     // Build upstream section
     $blockLines = [];
     if ($enabled) {
-        $blockLines[] = 'Upstream ' . $host . ':' . $port;
-        if (!empty($noproxy)) {
-            $blockLines[] = '# no upstream proxy for internal websites and unqualified hosts';
-            foreach ($noproxy as $entry) {
-                $blockLines[] = 'no upstream "' . $entry . '"';
+        $blockLines[] = '# UPSTREAM_PROXY ' . $host . ':' . $port;
+        if (empty($domains)) {
+            $blockLines[] = '# No domains routed through the upstream proxy - everything goes direct';
+        } else {
+            $blockLines[] = '# Only these domains are routed through the upstream proxy';
+            foreach ($domains as $entry) {
+                $blockLines[] = 'upstream ' . $host . ':' . $port . ' "' . $entry . '"';
             }
         }
     } else {
-        // Park the entries as comments so enabling the upstream proxy again restores them
-        $blockLines[] = '# Upstream proxy.example.com:3128';
-        foreach ($noproxy as $entry) {
-            $blockLines[] = '# SAVED no upstream "' . $entry . '"';
+        // Park proxy and domains as comments so enabling it again restores them
+        $blockLines[] = '# SAVED UPSTREAM_PROXY ' . ($host !== '' && $port !== '' ? $host . ':' . $port : 'proxy.example.com:3128');
+        foreach ($domains as $entry) {
+            $blockLines[] = '# SAVED upstream "' . $entry . '"';
         }
     }
     $upstreamBlock = implode("\n", $blockLines);
@@ -442,89 +457,73 @@ function setUpstream($enabled, $host, $port, $noproxy = null) {
     ];
 }
 
-function addNoproxy($entry) {
-    $configFile = '/app/tinyproxy.conf';
+// Restarts tinyproxy so a changed domain list takes effect, and folds the
+// outcome into the API response the GUI shows.
+function applyUpstreamChange($result, $what) {
+    if (!$result['success']) {
+        return $result;
+    }
+
+    $output = [];
+    $exitCode = 1;
+    @exec('docker restart tinyproxy 2>&1', $output, $exitCode);
+
+    if ($exitCode === 0) {
+        $result['message'] = $what . ' and Tinyproxy restarted successfully!';
+        $result['restart'] = true;
+    } else {
+        $result['message'] = $what . '. Please restart Tinyproxy manually!';
+        $result['restart'] = false;
+    }
+
+    return $result;
+}
+
+function addUpstreamDomain($entry) {
     $entry = trim($entry);
     
     if (empty($entry)) {
         return ['success' => false, 'message' => 'Entry is empty'];
     }
     
-    if (!isValidNoproxyEntry($entry)) {
-        return ['success' => false, 'message' => 'Invalid entry (allowed: letters, digits, dot, hyphen, underscore, slash - e.g. .local or 192.168.0.0/16)'];
+    if (!isValidUpstreamDomain($entry)) {
+        return ['success' => false, 'message' => 'Invalid entry (allowed: letters, digits, dot, hyphen, underscore, slash - e.g. .corp.local or 192.168.0.0/16)'];
     }
     
-    // Get current upstream configuration
     $current = getUpstream();
     if (!$current['enabled']) {
-        return ['success' => false, 'message' => 'Upstream Proxy must be enabled to use NoProxy'];
+        return ['success' => false, 'message' => 'Upstream Proxy must be enabled before routing domains through it'];
     }
     
-    // Check if entry already exists
-    if (in_array($entry, $current['noproxy'])) {
+    if (in_array($entry, $current['domains'])) {
         return ['success' => false, 'message' => 'Entry already exists'];
     }
     
-    // Add new entry
-    $noproxy = $current['noproxy'];
-    $noproxy[] = $entry;
+    $domains = $current['domains'];
+    $domains[] = $entry;
     
-    $result = setUpstream(true, $current['host'], $current['port'], $noproxy);
-    
-    // Try to restart tinyproxy container
-    if ($result['success']) {
-        $output = [];
-        $exitCode = 1;
-        @exec('docker restart tinyproxy 2>&1', $output, $exitCode);
-        
-        if ($exitCode === 0) {
-            $result['message'] = 'NoProxy entry added and Tinyproxy restarted successfully!';
-            $result['restart'] = true;
-        } else {
-            $result['message'] = 'NoProxy entry added. Please restart Tinyproxy manually!';
-            $result['restart'] = false;
-        }
-    }
-    
-    return $result;
+    $result = setUpstream(true, $current['host'], $current['port'], $domains);
+
+    return applyUpstreamChange($result, 'Domain routed through the upstream proxy');
 }
 
-function deleteNoproxy($entry) {
-    $configFile = '/app/tinyproxy.conf';
-    
-    // Get current upstream configuration
+function deleteUpstreamDomain($entry) {
     $current = getUpstream();
     if (!$current['enabled']) {
         return ['success' => false, 'message' => 'Upstream Proxy is not enabled'];
     }
     
-    // Remove entry
-    $noproxy = array_filter($current['noproxy'], function($item) use ($entry) {
+    $domains = array_filter($current['domains'], function($item) use ($entry) {
         return trim($item) !== trim($entry);
     });
     
-    if (count($noproxy) === count($current['noproxy'])) {
+    if (count($domains) === count($current['domains'])) {
         return ['success' => false, 'message' => 'Entry not found'];
     }
     
-    $result = setUpstream(true, $current['host'], $current['port'], array_values($noproxy));
-    
-    // Try to restart tinyproxy container
-    if ($result['success']) {
-        $output = [];
-        $exitCode = 1;
-        @exec('docker restart tinyproxy 2>&1', $output, $exitCode);
-        
-        if ($exitCode === 0) {
-            $result['message'] = 'NoProxy entry deleted and Tinyproxy restarted successfully!';
-            $result['restart'] = true;
-        } else {
-            $result['message'] = 'NoProxy entry deleted. Please restart Tinyproxy manually!';
-            $result['restart'] = false;
-        }
-    }
-    
-    return $result;
+    $result = setUpstream(true, $current['host'], $current['port'], array_values($domains));
+
+    return applyUpstreamChange($result, 'Domain removed from upstream routing');
 }
 
 function getTraffic($lines = 200, $container = '') {
@@ -1017,14 +1016,14 @@ switch ($action) {
         echo json_encode(setTrafficBlock($block));
         break;
         
-    case 'add_noproxy':
+    case 'add_upstream_domain':
         $entry = $data['entry'] ?? '';
-        echo json_encode(addNoproxy($entry));
+        echo json_encode(addUpstreamDomain($entry));
         break;
 
-    case 'delete_noproxy':
+    case 'delete_upstream_domain':
         $entry = $data['entry'] ?? '';
-        echo json_encode(deleteNoproxy($entry));
+        echo json_encode(deleteUpstreamDomain($entry));
         break;
 
     case 'get_containers':

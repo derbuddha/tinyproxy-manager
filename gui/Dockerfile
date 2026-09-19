@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
 # Copy PHP files
 COPY index.php /var/www/html/
 COPY style.css /var/www/html/
+COPY searchable-select.js /var/www/html/
 COPY api.php /var/www/html/
 COPY traffic-parser.php /var/www/html/
 COPY domain-filter.php /var/www/html/

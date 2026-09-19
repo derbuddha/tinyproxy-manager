@@ -9,7 +9,7 @@ An HTTP proxy with a web GUI for domain filtering and per-container access contr
 - ✅ **Domain Filter Mode** - switch the domain filter between a blocklist (block only listed domains) and an allowlist (block everything except listed domains)
 - ✅ **Container Access Control** - Allow or block individual Docker containers by name/IP, with a dual-mode policy (Block-new vs. Allow-new) for how unrecognized containers are treated
 - ✅ **Upstream Proxy Support** - Chain multiple proxies (Proxy Chaining)
-- ✅ **NoProxy (Direct Connections)** - Bypass the upstream proxy for specific domains/IPs
+- ✅ **Upstream Domains (Opt-In Routing)** - Only explicitly listed domains/IPs are forwarded to the upstream proxy; everything else goes direct
 - ✅ Traffic kill-switch for immediately stopping all requests
 - ✅ Live traffic monitor with auto-refresh and client-side domain filtering
 - ✅ Persistent traffic history (up to 10,000 entries, oldest dropped first) with a paginated full-log viewer and JSON export
@@ -157,42 +157,53 @@ Some traffic is just noise - e.g. a self-hosted service phoning its own health-c
 
 ## Upstream Proxy (Proxy Chaining)
 
-You can configure Tinyproxy to forward **all** requests to another proxy:
+Tinyproxy can forward requests to a second proxy. Forwarding is **opt-in per domain**:
+by default every request - including every allowed domain - connects **directly** to
+the internet, and only the domains you list explicitly are sent to the upstream proxy.
 
 ### Configure via Web GUI
 1. Open `http://localhost:8080`
 2. Scroll to **"Upstream Proxy (Proxy Forwarding)"**
 3. Enable the upstream proxy
 4. Enter host and port of the second proxy
-5. Click "Save" and restart Tinyproxy
+5. Click "Save Upstream Proxy"
+6. Add the domains/IPs that should go through it under **"Upstream Domains"**
 
-### NoProxy - Direct Connections
+Until at least one domain is listed, enabling the upstream proxy changes nothing -
+all traffic keeps going direct.
 
-With **NoProxy** you can exclude specific domains/IPs from the upstream proxy. These requests will go **directly** to the internet without passing through the second proxy.
+### Upstream Domains - Routed Connections
 
-**Examples for NoProxy entries:**
-- `localhost` - Local requests direct
-- `192.168.0.0/16` - Private network direct
-- `10.0.0.0/8` - Internal network direct
-- `.local` - All .local domains direct
-- `internal.company.com` - Specific internal domain
+**Examples for Upstream Domains entries:**
+- `internal.example.com` - that host (and its subdomains) via the upstream proxy
+- `.corp.local` - all `.corp.local` domains via the upstream proxy
+- `10.0.0.0/8` - the whole internal network via the upstream proxy
 
-**Use Case:** 
+**Use Case:**
 - Upstream Proxy: `corporate-proxy.example.com:3128`
-- NoProxy: `192.168.0.0/16`, `10.0.0.0/8`
-- **Result:** External requests go through the corporate proxy, internal requests (LAN) go direct
+- Upstream Domains: `.corp.local`, `10.0.0.0/8`
+- **Result:** Corporate/internal requests go through the corporate proxy, everything
+  else goes straight out
 
 ### Manual Configuration in tinyproxy.conf
 ```conf
-# Forward all requests through second proxy
-Upstream http proxy.example.com:3128 "."
+# Only these hosts are forwarded to the second proxy
+upstream proxy.example.com:3128 "test.de"
+upstream proxy.example.com:3128 ".corp.local"
+upstream proxy.example.com:3128 "10.0.0.0/8"
 
-# Exceptions for direct connections
-No localhost
-No 192.168.0.0/16
-No 10.0.0.0/8
-No .local
+# Anything not matched above connects directly - no extra rule needed
 ```
+
+With the rules above, a request to `test.de` (or `www.test.de`) is handed to
+`proxy.example.com:3128`, while a request to any other allowed domain -
+`github.com`, say - goes straight out.
+
+> **Note:** Tinyproxy's catch-all form (`Upstream proxy.example.com:3128` without a
+> domain, combined with `no upstream "..."` exceptions) routes *everything* through
+> the upstream proxy. The GUI no longer writes it; a config still containing it is
+> migrated to the opt-in form (host and port are kept, the domain list starts empty)
+> the next time the upstream settings are saved.
 
 ## Regex Pattern Examples
 

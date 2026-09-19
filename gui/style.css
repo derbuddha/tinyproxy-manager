@@ -1202,6 +1202,195 @@ a.btn-restart, a.btn-sync-allow {
     padding: var(--space-2);
 }
 
+/* Type-to-filter box above a rendered list (Allowed Domains). Purely visual -
+   it hides non-matching rows, the underlying list file is untouched. */
+.list-filter-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+.list-filter-row[hidden] {
+    display: none;
+}
+
+.list-filter-input {
+    flex: 1;
+    min-width: 0;
+    padding: var(--space-2) var(--space-4);
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-md);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    background-color: var(--input-bg);
+    color: var(--text-primary);
+    transition: all 0.2s ease;
+}
+
+.list-filter-input::placeholder {
+    color: var(--text-secondary);
+}
+
+.list-filter-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.2);
+}
+
+.list-filter-clear {
+    flex: none;
+    width: 1.75rem;
+    height: 1.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-inset);
+    color: var(--text-secondary);
+    font-size: 1.125rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.list-filter-clear:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+}
+
+.list-filter-clear[hidden] {
+    display: none;
+}
+
+.list-filter-count {
+    flex: none;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.list-filter-empty[hidden] {
+    display: none;
+}
+
+/* Searchable select - the visible combobox replacing the native container
+   dropdown (see searchable-select.js). The <select> itself stays in the DOM,
+   hidden, so form submits and existing JS keep reading it. */
+.ss-native {
+    display: none !important;
+}
+
+.ss-wrap {
+    position: relative;
+    display: inline-block;
+    min-width: 240px;
+}
+
+.ss-input {
+    width: 100%;
+    padding: var(--space-3) var(--space-8) var(--space-3) var(--space-4);
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-md);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    background-color: var(--input-bg);
+    color: var(--text-primary);
+    cursor: text;
+    transition: all 0.2s ease;
+}
+
+.ss-input::placeholder {
+    color: var(--text-secondary);
+}
+
+.ss-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.2);
+}
+
+.ss-wrap.ss-open .ss-input {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.ss-arrow {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    bottom: 1px;
+    width: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.ss-arrow:hover {
+    color: var(--text-primary);
+}
+
+.ss-list {
+    position: absolute;
+    z-index: 50;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin: 0;
+    padding: var(--space-2) 0;
+    list-style: none;
+    max-height: 280px;
+    overflow-y: auto;
+    background: var(--bg-card);
+    border: 1px solid var(--primary);
+    border-top: none;
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    box-shadow: var(--shadow-lg);
+}
+
+.ss-option {
+    padding: var(--space-2) var(--space-4);
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ss-option.ss-active {
+    background: var(--bg-card-hover);
+}
+
+.ss-option.ss-selected {
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.ss-match {
+    color: var(--primary);
+    font-weight: 700;
+}
+
+.ss-option.ss-active .ss-match {
+    text-decoration: underline;
+}
+
+.ss-empty {
+    padding: var(--space-2) var(--space-4);
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
 /* Blocked-only toggle - matches the BLOCKED badge in the traffic list */
 .btn-blocked-filter {
     display: inline-flex;

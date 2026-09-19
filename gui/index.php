@@ -7,6 +7,7 @@
     <title>Tinyproxy Manager</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="stylesheet" href="style.css?v=<?php echo filemtime(__DIR__ . '/style.css'); ?>">
+    <script src="searchable-select.js?v=<?php echo filemtime(__DIR__ . '/searchable-select.js'); ?>"></script>
 </head>
 <body>
     <!-- Theme Toggle Button -->
@@ -190,6 +191,13 @@
 
         <div class="card" id="allowed-domains-card">
             <h2 id="allowed-domains-title">Allowed Domains <span class="domain-card-badge" id="allowed-domains-badge"></span></h2>
+            <div class="list-filter-row" id="allowed-filter-row">
+                <input type="text" id="allowed-filter-input" class="list-filter-input" autocomplete="off" spellcheck="false"
+                       placeholder="Filter allowed domains..." oninput="filterAllowedDomains()" onkeydown="if (event.key === 'Escape') { event.preventDefault(); clearAllowedFilter(); }">
+                <button type="button" class="list-filter-clear" id="allowed-filter-clear" title="Clear filter" onclick="clearAllowedFilter()" hidden>&times;</button>
+                <span class="list-filter-count" id="allowed-filter-count"></span>
+            </div>
+            <p class="no-domains list-filter-empty" id="allowed-filter-empty" hidden></p>
             <div id="allowed-list">
                 <?php
                 $allowedDomainsFile = '/app/allowed-domains.txt';
@@ -268,7 +276,8 @@
         <div class="card">
             <h2>🔄 Upstream Proxy (Proxy Forwarding)</h2>
             <p class="help-text" style="margin-bottom: 15px;">
-                Configure a second proxy through which Tinyproxy forwards all traffic (Proxy Chaining).
+                Configure a second proxy for Proxy Chaining. Traffic goes <strong>directly</strong> to the
+                internet by default - only the domains listed below are forwarded to the upstream proxy.
             </p>
             <div id="upstream-config">
                 <div class="upstream-form">
@@ -290,22 +299,24 @@
                         </div>
                         <button class="btn-add" onclick="saveUpstream()" style="margin-top: 10px;">Save Upstream Proxy</button>
 
-                        <div id="noproxy-section" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd;">
-                            <h3 id="noproxy-title" style="margin-bottom: 10px;">🔓 NoProxy (Direct Connections)</h3>
+                        <div id="upstream-domains-section" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd;">
+                            <h3 id="upstream-domains-title" style="margin-bottom: 10px;">🔀 Upstream Domains (Routed via Proxy)</h3>
                             <p class="help-text" style="margin-bottom: 10px;">
-                                Domains/IPs that should NOT be routed through the Upstream Proxy (direct access).
+                                Only these domains/IPs are sent through the Upstream Proxy. Everything else
+                                connects directly - an empty list means nothing is forwarded.
                             </p>
 
-                            <div id="noproxy-list" style="margin-bottom: 10px;">
+                            <div id="upstream-domains-list" style="margin-bottom: 10px;">
                                 <!-- Dynamically filled -->
                             </div>
 
                             <div class="form-row">
-                                <input type="text" id="noproxy-entry" placeholder="e.g. localhost, 192.168.0.0/16, .local" style="flex: 1;">
-                                <button class="btn-add" onclick="addNoproxyEntry()">Add</button>
+                                <input type="text" id="upstream-domain-entry" placeholder="e.g. internal.example.com, 10.0.0.0/8, .corp.local" style="flex: 1;">
+                                <button class="btn-add" onclick="addUpstreamDomain()">Add</button>
                             </div>
                             <p class="help-text" style="margin-top: 5px; font-size: 0.9em;">
-                                Examples: <code>localhost</code>, <code>192.168.0.0/16</code>, <code>.local</code>, <code>10.0.0.0/8</code>
+                                Examples: <code>internal.example.com</code>, <code>.corp.local</code>, <code>10.0.0.0/8</code> -
+                                a domain also matches its subdomains.
                             </p>
                         </div>
                     </div>
@@ -521,6 +532,7 @@
                 if (result.containers.includes(current)) {
                     select.value = current;
                 }
+                SearchableSelect.refresh(select);
             } catch (error) {
                 console.error('Error loading containers:', error);
             }
@@ -535,6 +547,7 @@
         function clearContainerFilter() {
             trafficContainerFilter = '';
             document.getElementById('live-container-select').value = '';
+            SearchableSelect.sync('live-container-select');
             document.getElementById('live-container-clear').style.display = 'none';
             refreshTraffic();
         }
@@ -871,6 +884,58 @@
             }
         }
 
+        // Client-side filter over the Allowed Domains list. The list is rendered
+        // by PHP and the page reloads after add/delete, so this only ever hides
+        // rows - it never touches allowed-domains.txt.
+        function allowedDomainItems() {
+            return document.querySelectorAll('#allowed-list .domain-item');
+        }
+
+        function filterAllowedDomains() {
+            const input = document.getElementById('allowed-filter-input');
+            const query = input.value.trim().toLowerCase();
+            const items = allowedDomainItems();
+            let shown = 0;
+
+            items.forEach(item => {
+                // Matches the pattern and its comment, so "git clone" finds a
+                // domain that was only annotated with why it's on the list.
+                const haystack = ((item.dataset.domain || '') + ' ' + (item.dataset.comment || '')).toLowerCase();
+                const match = query === '' || haystack.indexOf(query) !== -1;
+                item.style.display = match ? '' : 'none';
+                if (match) shown++;
+            });
+
+            document.getElementById('allowed-filter-clear').hidden = query === '';
+            document.getElementById('allowed-filter-count').textContent =
+                query === '' ? '' : shown + ' of ' + items.length + ' shown';
+
+            const empty = document.getElementById('allowed-filter-empty');
+            empty.hidden = !(query !== '' && shown === 0);
+            if (!empty.hidden) {
+                empty.textContent = 'No allowed domain matches "' + input.value.trim() + '"';
+            }
+        }
+
+        function clearAllowedFilter() {
+            const input = document.getElementById('allowed-filter-input');
+            input.value = '';
+            filterAllowedDomains();
+            input.focus();
+        }
+
+        function initAllowedFilter() {
+            const row = document.getElementById('allowed-filter-row');
+            if (!row) return;
+            const count = allowedDomainItems().length;
+            // Nothing to filter on an empty list - don't show a dead input.
+            row.hidden = count === 0;
+            if (count > 0) {
+                document.getElementById('allowed-filter-input').placeholder =
+                    'Filter ' + count + ' allowed domain' + (count === 1 ? '' : 's') + '... (domain or comment)';
+            }
+        }
+
         const allowedList = document.getElementById('allowed-list');
         if (allowedList) {
             allowedList.addEventListener('click', (e) => {
@@ -1147,13 +1212,16 @@
                     document.getElementById('upstream-port').value = result.port || '';
                     
                     if (result.enabled) {
+                        const domains = result.domains || [];
                         document.getElementById('upstream-fields').style.display = 'block';
-                        document.getElementById('noproxy-section').style.display = 'block';
-                        document.getElementById('upstream-status').innerHTML = 
-                            '<p class="success">✓ Upstream Proxy active: ' + result.host + ':' + result.port + '</p>';
-                        
-                        // Load noproxy entries
-                        updateNoproxyList(result.noproxy || []);
+                        document.getElementById('upstream-domains-section').style.display = 'block';
+                        document.getElementById('upstream-status').innerHTML = domains.length
+                            ? '<p class="success">✓ Upstream Proxy active: ' + result.host + ':' + result.port +
+                              ' - routing ' + domains.length + ' domain(s), everything else direct</p>'
+                            : '<p class="success">✓ Upstream Proxy configured: ' + result.host + ':' + result.port +
+                              ' - no domains routed through it yet, all traffic goes direct</p>';
+
+                        updateUpstreamDomainsList(domains);
                     } else {
                         document.getElementById('upstream-status').innerHTML = 
                             '<p class="help-text">No Upstream Proxy configured</p>';
@@ -1164,10 +1232,10 @@
             }
         }
         
-        function updateNoproxyList(entries) {
-            const listDiv = document.getElementById('noproxy-list');
+        function updateUpstreamDomainsList(entries) {
+            const listDiv = document.getElementById('upstream-domains-list');
             if (!entries || entries.length === 0) {
-                listDiv.innerHTML = '<p class="help-text" style="font-style: italic;">No NoProxy entries configured</p>';
+                listDiv.innerHTML = '<p class="help-text" style="font-style: italic;">No domains routed through the Upstream Proxy - all traffic goes direct</p>';
                 return;
             }
             
@@ -1175,21 +1243,21 @@
             entries.forEach(entry => {
                 html += '<div class="domain-item" style="margin-bottom: 5px;">';
                 html += '<span class="domain">' + escapeHtml(entry) + '</span>';
-                html += '<button class="btn-delete" onclick="deleteNoproxyEntry(\'' + escapeHtml(entry).replace(/'/g, "\\'") + '\')">Delete</button>';
+                html += '<button class="btn-delete" onclick="deleteUpstreamDomain(\'' + escapeHtml(entry).replace(/'/g, "\\'") + '\')">Delete</button>';
                 html += '</div>';
             });
             listDiv.innerHTML = html;
         }
         
-        async function addNoproxyEntry() {
-            const entry = document.getElementById('noproxy-entry').value.trim();
+        async function addUpstreamDomain() {
+            const entry = document.getElementById('upstream-domain-entry').value.trim();
 
             if (!entry) {
                 alert('Please enter an entry');
                 return;
             }
 
-            const titleElement = document.getElementById('noproxy-title');
+            const titleElement = document.getElementById('upstream-domains-title');
             const originalTitle = titleElement.textContent;
             titleElement.textContent = '⏳ Restarting Tinyproxy...';
 
@@ -1198,18 +1266,18 @@
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
-                        action: 'add_noproxy',
+                        action: 'add_upstream_domain',
                         entry: entry
                     })
                 });
                 const result = await safeJsonParse(response);
 
                 if (result.success) {
-                    document.getElementById('noproxy-entry').value = '';
+                    document.getElementById('upstream-domain-entry').value = '';
                     if (result.restart) {
-                        showNotification('✓ NoProxy entry added and Tinyproxy restarted!', 'success');
+                        showNotification('✓ Domain now routed via Upstream Proxy, Tinyproxy restarted!', 'success');
                     } else {
-                        showNotification('✓ NoProxy entry added. Please restart Tinyproxy manually!', 'warning');
+                        showNotification('✓ Domain added. Please restart Tinyproxy manually!', 'warning');
                     }
                     setTimeout(() => location.reload(), 1500);
                 } else {
@@ -1222,12 +1290,12 @@
             }
         }
 
-        async function deleteNoproxyEntry(entry) {
-            if (!confirm('Really delete NoProxy entry "' + entry + '"?')) {
+        async function deleteUpstreamDomain(entry) {
+            if (!confirm('Stop routing "' + entry + '" through the Upstream Proxy?\n\nIt will connect directly again.')) {
                 return;
             }
 
-            const titleElement = document.getElementById('noproxy-title');
+            const titleElement = document.getElementById('upstream-domains-title');
             const originalTitle = titleElement.textContent;
             titleElement.textContent = '⏳ Restarting Tinyproxy...';
 
@@ -1236,7 +1304,7 @@
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
-                        action: 'delete_noproxy',
+                        action: 'delete_upstream_domain',
                         entry: entry
                     })
                 });
@@ -1244,9 +1312,9 @@
 
                 if (result.success) {
                     if (result.restart) {
-                        showNotification('✓ NoProxy entry deleted and Tinyproxy restarted!', 'success');
+                        showNotification('✓ Domain removed from upstream routing, Tinyproxy restarted!', 'success');
                     } else {
-                        showNotification('✓ NoProxy entry deleted. Please restart Tinyproxy manually!', 'warning');
+                        showNotification('✓ Domain removed. Please restart Tinyproxy manually!', 'warning');
                     }
                     setTimeout(() => location.reload(), 1500);
                 } else {
@@ -1300,8 +1368,8 @@
             const fields = document.getElementById('upstream-fields');
 
             const confirmMsg = this.checked
-                ? 'Enable Upstream Proxy?\n\nAll traffic will be forwarded to a second proxy.\nEnter host and port, then click "Save Upstream Proxy".'
-                : 'Disable Upstream Proxy?\n\nTraffic will go directly to the internet again.\nYour NoProxy entries are kept and restored when you enable it again.';
+                ? 'Enable Upstream Proxy?\n\nNo traffic is forwarded until you list domains for it - everything else keeps going direct.\nEnter host and port, then click "Save Upstream Proxy".'
+                : 'Disable Upstream Proxy?\n\nAll traffic will go directly to the internet.\nYour upstream domain list is kept and restored when you enable it again.';
 
             if (!confirm(confirmMsg)) {
                 this.checked = !this.checked; // Revert toggle
@@ -1579,6 +1647,8 @@
         }
 
         // Initial load
+        initAllowedFilter();
+        SearchableSelect.enhance('live-container-select', {placeholder: 'All containers - type to filter'});
         loadFilters();
         loadUpstream();
         loadTrafficBlockStatus();
