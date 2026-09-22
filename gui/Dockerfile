@@ -12,6 +12,10 @@ COPY index.php /var/www/html/
 COPY style.css /var/www/html/
 COPY searchable-select.js /var/www/html/
 COPY api.php /var/www/html/
+COPY auth.php /var/www/html/
+COPY auth-callback.php /var/www/html/
+COPY login.php /var/www/html/
+COPY logout.php /var/www/html/
 COPY traffic-parser.php /var/www/html/
 COPY domain-filter.php /var/www/html/
 COPY traffic-logger.php /var/www/html/
@@ -31,6 +35,15 @@ RUN echo 'server {\n\
     \n\
     location / {\n\
         try_files $uri $uri/ =404;\n\
+    }\n\
+    \n\
+    # OIDC callback alias: lets the redirect URI registered in Keycloak use a\n\
+    # clean /sso/callback path instead of the raw script name. Both work.\n\
+    location = /sso/callback {\n\
+        include fastcgi_params;\n\
+        fastcgi_pass 127.0.0.1:9000;\n\
+        fastcgi_param SCRIPT_FILENAME $document_root/auth-callback.php;\n\
+        fastcgi_param SCRIPT_NAME /auth-callback.php;\n\
     }\n\
     \n\
     location ~ \.php$ {\n\

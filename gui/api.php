@@ -1,6 +1,12 @@
 <?php
 require_once __DIR__ . '/traffic-parser.php';
 require_once __DIR__ . '/domain-filter.php';
+require_once __DIR__ . '/auth.php';
+
+// No-op unless KEYCLOAK_ENABLED is set; otherwise answers 401 JSON so the
+// frontend can send the user back through the login instead of parsing
+// Keycloak's HTML.
+authRequireApi();
 
 // Prevent PHP errors/warnings from corrupting JSON output
 ini_set('display_errors', 0);

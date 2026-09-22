@@ -1,4 +1,10 @@
-<?php require_once __DIR__ . '/domain-filter.php'; ?>
+<?php
+require_once __DIR__ . '/domain-filter.php';
+require_once __DIR__ . '/auth.php';
+
+// No-op unless KEYCLOAK_ENABLED is set; otherwise redirects to Keycloak.
+authRequirePage();
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,13 +14,17 @@
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="stylesheet" href="style.css?v=<?php echo filemtime(__DIR__ . '/style.css'); ?>">
     <script src="searchable-select.js?v=<?php echo filemtime(__DIR__ . '/searchable-select.js'); ?>"></script>
+    <?php authRenderSessionGuardScript(); ?>
 </head>
 <body>
-    <!-- Theme Toggle Button -->
-    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
-        <span class="theme-toggle-icon" id="theme-icon">🌙</span>
-        <span class="theme-toggle-text" id="theme-text">Dark</span>
-    </button>
+    <!-- Top bar: signed-in user (only with Keycloak login enabled) + theme toggle -->
+    <div class="topbar">
+        <?php authRenderUserBadge(); ?>
+        <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
+            <span class="theme-toggle-icon" id="theme-icon">🌙</span>
+            <span class="theme-toggle-text" id="theme-text">Dark</span>
+        </button>
+    </div>
 
     <div class="container">
         <h1>🔒 Tinyproxy Domain Manager</h1>

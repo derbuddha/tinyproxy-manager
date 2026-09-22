@@ -1,2 +1,4 @@
 traffic-history.json
 refresh.sh
+# Holds KEYCLOAK_CLIENT_SECRET - never commit it (see .env.example)
+.env

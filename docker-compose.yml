@@ -65,6 +65,22 @@ services:
       # duplicated across the PHP files.
       - NETWORK_NAME=${NETWORK_NAME:-codersrv_default}
       - TZ=Europe/Berlin
+      # Optional Keycloak (OIDC) login - see keycloak.md. Off unless
+      # KEYCLOAK_ENABLED is true; put the values in an .env file next to this
+      # compose file, never inline (the client secret is a credential).
+      # Without it the GUI is unauthenticated, and it mounts the Docker socket.
+      - KEYCLOAK_ENABLED=${KEYCLOAK_ENABLED:-false}
+      - KEYCLOAK_ISSUER=${KEYCLOAK_ISSUER:-}
+      - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID:-}
+      - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:-}
+      # Only needed when the GUI is reached under a different URL than the one
+      # derived from the request (X-Forwarded-Proto/Host).
+      - KEYCLOAK_REDIRECT_URI=${KEYCLOAK_REDIRECT_URI:-}
+      # Restrict access to a dedicated group/role - empty means every user the
+      # realm authenticates may in.
+      - KEYCLOAK_ALLOWED_GROUPS=${KEYCLOAK_ALLOWED_GROUPS:-}
+      - KEYCLOAK_ALLOWED_ROLES=${KEYCLOAK_ALLOWED_ROLES:-}
+      - KEYCLOAK_SESSION_TTL=${KEYCLOAK_SESSION_TTL:-43200}
     restart: unless-stopped
     networks:
       - codersrv_default

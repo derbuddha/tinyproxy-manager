@@ -1,4 +1,9 @@
 <?php
+require_once __DIR__ . '/auth.php';
+
+// No-op unless KEYCLOAK_ENABLED is set; otherwise redirects to Keycloak.
+authRequirePage();
+
 $historyFile = '/app/traffic-history.json';
 $history = [];
 if (file_exists($historyFile)) {

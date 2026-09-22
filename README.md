@@ -10,6 +10,7 @@ An HTTP proxy with a web GUI for domain filtering and per-container access contr
 - ✅ **Container Access Control** - Allow or block individual Docker containers by name/IP, with a dual-mode policy (Block-new vs. Allow-new) for how unrecognized containers are treated
 - ✅ **Upstream Proxy Support** - Chain multiple proxies (Proxy Chaining)
 - ✅ **Upstream Domains (Opt-In Routing)** - Only explicitly listed domains/IPs are forwarded to the upstream proxy; everything else goes direct
+- ✅ **Optional Keycloak (OIDC) login** - put the whole GUI behind single sign-on, restricted to a chosen group or role (off by default)
 - ✅ Traffic kill-switch for immediately stopping all requests
 - ✅ Live traffic monitor with auto-refresh and client-side domain filtering
 - ✅ Persistent traffic history (up to 10,000 entries, oldest dropped first) with a paginated full-log viewer and JSON export
@@ -25,7 +26,7 @@ An HTTP proxy with a web GUI for domain filtering and per-container access contr
 ## Prerequisites
 
 - An existing Docker network that your other containers share (the compose file references it as an **external** network, `codersrv_default` by default). Adjust the network name in `docker-compose.yml` and in `gui/api.php` (`getNetworkContainers()`) to match your own setup if different.
-- Docker socket access for the GUI container (`/var/run/docker.sock`) — required for container discovery, auto-restarting Tinyproxy, and the access control features. This effectively grants the GUI container root-equivalent control over the Docker host, so only expose port 8080 on a trusted network.
+- Docker socket access for the GUI container (`/var/run/docker.sock`) — required for container discovery, auto-restarting Tinyproxy, and the access control features. This effectively grants the GUI container root-equivalent control over the Docker host, so only expose port 8080 on a trusted network — or enable [Keycloak login](#keycloak-login-optional).
 
 ## Installation in Dockge
 
@@ -205,6 +206,46 @@ With the rules above, a request to `test.de` (or `www.test.de`) is handed to
 > migrated to the opt-in form (host and port are kept, the domain list starts empty)
 > the next time the upstream settings are saved.
 
+## Keycloak Login (optional)
+
+The GUI has **no authentication by default** — anyone who can reach it can
+control the proxy, and through the mounted Docker socket, the host. Setting
+`KEYCLOAK_ENABLED=true` puts every page and API endpoint behind a Keycloak
+login (OpenID Connect, Authorization Code + PKCE). No extra container needed.
+
+Copy `.env.example` to `.env` and fill in:
+
+```ini
+KEYCLOAK_ENABLED=true
+KEYCLOAK_ISSUER=https://keycloak.example.com/realms/myrealm
+KEYCLOAK_CLIENT_ID=tinyproxy-manager
+KEYCLOAK_CLIENT_SECRET=<client secret>
+KEYCLOAK_ALLOWED_GROUPS=tinyproxy-admins
+```
+
+Then rebuild the GUI:
+
+```bash
+docker compose up -d --build tinyproxy-gui
+```
+
+In Keycloak, register a **confidential** client (client authentication on) with
+`https://<your-gui-domain>/auth-callback.php` as a valid redirect URI, and add a
+**Group Membership** mapper so the ID token carries a `groups` claim.
+
+Once signed in, the dashboard shows a `👤 <username>` chip with a **Sign out**
+link. Signing out ends the Keycloak SSO session too.
+
+`KEYCLOAK_ALLOWED_GROUPS` (or `KEYCLOAK_ALLOWED_ROLES`) is what limits access to
+trusted accounts — leave both empty and **every user in the realm** gets full
+control of the proxy and the Docker socket.
+
+If the configuration is incomplete or Keycloak is unreachable, the GUI shows an
+error page rather than falling back to unauthenticated access.
+
+**→ Full setup, all options and troubleshooting: [keycloak.md](keycloak.md)**,
+which also covers the oauth2-proxy alternative.
+
 ## Regex Pattern Examples
 
 ```
@@ -289,11 +330,17 @@ tinyproxy-manager/
 ├── proxy-config.json           # GUI settings (new client policy, domain filter mode, kill-switch state)
 ├── traffic-history.json        # Persisted traffic log (capped at 10,000 entries)
 ├── traffic-noise-filters.txt   # Server-wide display filters for the Live Monitor / Full Log page
+├── .env.example                # Template for NETWORK_NAME and the optional Keycloak settings
+├── keycloak.md                 # Guide for putting the GUI behind Keycloak login
 ├── gui/
 │   ├── Dockerfile              # GUI container build
 │   ├── entrypoint.sh           # Container startup, permissions & background logger
 │   ├── index.php               # Web interface (dashboard)
 │   ├── api.php                 # Backend API
+│   ├── auth.php                # Optional Keycloak/OIDC login (off unless KEYCLOAK_ENABLED)
+│   ├── auth-callback.php       # OIDC redirect target - verifies the token, opens the session
+│   ├── login.php               # Login dialog's button target - starts the OIDC flow
+│   ├── logout.php              # Ends the GUI session and the Keycloak SSO session
 │   ├── traffic-parser.php      # Shared tinyproxy.log parsing + history ingestion
 │   ├── domain-filter.php       # Shared filter-list parsing (domain + inline comment)
 │   ├── traffic-logger.php      # Background daemon that archives log entries
@@ -309,7 +356,9 @@ tinyproxy-manager/
 - No external cloud dependencies
 - All data stays in your own network
 - Filter logs in `/var/log/tinyproxy/` (in container)
-- The GUI container mounts `/var/run/docker.sock` to discover containers and restart Tinyproxy. This gives it root-equivalent access to the Docker host — only run it on a trusted network and don't expose port 8080 publicly without additional authentication (e.g. a reverse proxy with basic auth or SSO)
+- The GUI container mounts `/var/run/docker.sock` to discover containers and restart Tinyproxy. This gives it root-equivalent access to the Docker host — only run it on a trusted network and don't expose port 8080 publicly without authentication
+- [Keycloak login](#keycloak-login-optional) is the built-in way to add that authentication: set `KEYCLOAK_ENABLED=true` and restrict access to a dedicated group. Sessions are `HttpOnly`/`SameSite=Lax` cookies, `Secure` when served over HTTPS
+- Keep `KEYCLOAK_CLIENT_SECRET` in `.env` (gitignored), never in `docker-compose.yml`
 
 ## License
 

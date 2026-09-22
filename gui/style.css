@@ -97,12 +97,156 @@ h1 {
     letter-spacing: -0.01em;
 }
 
-/* Theme Toggle Button */
-.theme-toggle {
+/* Top Bar - user badge (Keycloak login) + theme toggle */
+.topbar {
     position: fixed;
     top: var(--space-5);
     right: var(--space-5);
     z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.user-badge {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-3);
+    box-shadow: var(--shadow-md);
+    font-size: 0.875rem;
+}
+
+.user-badge-icon {
+    font-size: 1.25rem;
+}
+
+.user-badge-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-badge-logout {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-weight: 600;
+    padding-left: var(--space-2);
+    border-left: 1px solid var(--border);
+    transition: color 0.2s ease;
+}
+
+.user-badge-logout:hover {
+    color: var(--secondary);
+}
+
+/* Login Dialog (Keycloak sign-in popup) */
+.login-body {
+    min-height: 100vh;
+}
+
+.login-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-5);
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    z-index: 2000;
+}
+
+.login-dialog {
+    width: 100%;
+    max-width: 380px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-xl);
+    padding: var(--space-8);
+    text-align: center;
+    animation: login-dialog-in 0.2s ease-out;
+}
+
+@keyframes login-dialog-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.login-dialog-icon {
+    font-size: 2.5rem;
+    line-height: 1;
+    margin-bottom: var(--space-4);
+}
+
+.login-dialog-title {
+    margin: 0 0 var(--space-2);
+    font-size: 1.25rem;
+    color: var(--text-primary);
+}
+
+.login-dialog-text {
+    margin: 0 0 var(--space-6);
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.login-dialog-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-4);
+    background: var(--primary);
+    color: #ffffff;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    text-decoration: none;
+    transition: background 0.2s ease;
+}
+
+.login-dialog-btn:hover {
+    background: var(--primary-hover);
+}
+
+.login-dialog-btn-icon {
+    font-size: 1.125rem;
+}
+
+/* Auth Notice Page (login errors, access denied) */
+.auth-notice {
+    max-width: 640px;
+    margin-top: 10vh;
+}
+
+.auth-notice-details {
+    margin: var(--space-4) 0;
+    padding-left: var(--space-5);
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.auth-notice-details li {
+    margin-bottom: var(--space-2);
+    word-break: break-word;
+}
+
+.auth-notice-actions {
+    display: flex;
+    gap: var(--space-3);
+    margin-top: var(--space-5);
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
@@ -1455,6 +1599,16 @@ a.btn-restart, a.btn-sync-allow {
 @media (max-width: 768px) {
     body {
         padding: var(--space-4);
+    }
+
+    .topbar {
+        top: var(--space-4);
+        right: var(--space-4);
+        gap: var(--space-2);
+    }
+
+    .user-badge-name {
+        max-width: 90px;
     }
 
     h1 {
