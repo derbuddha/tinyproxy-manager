@@ -303,12 +303,32 @@ function isValidUpstreamHost($host) {
     return (bool) preg_match('/^[A-Za-z0-9._-]+$/', trim($host));
 }
 
+// Returns the text between the UPSTREAM markers, or null when the markers are
+// missing (pre-marker config that still needs migrateUpstreamMarkers()).
+function extractManagedUpstreamBlock($content) {
+    if (preg_match('/^#\s*UPSTREAM_START\s*$(.*?)^#\s*UPSTREAM_END\s*$/ms', $content, $m)) {
+        return $m[1];
+    }
+    return null;
+}
+
 // Reads the upstream proxy and its routed-domain list out of a tinyproxy.conf.
 // While the upstream proxy is enabled, host/port live on a "# UPSTREAM_PROXY"
 // marker and the domains are live "upstream ..." directives; while it is
 // disabled both are parked as "# SAVED ..." lines, so a disable/enable
 // round-trip keeps the configuration.
 function parseUpstreamBlock($content) {
+    // Parse only what sits between the UPSTREAM markers. Manual
+    // upstream <host>:<port> "<domain>" rules placed outside that block
+    // (see the UPSTREAM_HIDDEN section in tinyproxy.conf) stay invisible to the
+    // GUI and are never touched by setUpstream(), which rewrites the managed
+    // block only. Without the markers - a legacy config - the whole file is
+    // parsed so migrateUpstreamMarkers() still finds the old directives.
+    $managed = extractManagedUpstreamBlock($content);
+    if ($managed !== null) {
+        $content = $managed;
+    }
+
     $enabled = false;
     $host = '';
     $port = '';
@@ -362,6 +382,12 @@ function migrateUpstreamMarkers($content) {
         }
 
         if ($inUpstreamSection) {
+            // A hand-maintained hidden block ends the legacy section untouched
+            if (preg_match('/^\s*#\s*UPSTREAM_HIDDEN_START/i', $line)) {
+                $inUpstreamSection = false;
+                $newLines[] = $line;
+                continue;
+            }
             // Drop legacy directives and their example comments
             if (preg_match('/^\s*(#\s*)?(SAVED\s+)?(Upstream\s+(http\s+)?\S+:\d+|no\s+upstream\s+.+)/i', $line)) {
                 continue;

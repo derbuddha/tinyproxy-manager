@@ -206,6 +206,40 @@ With the rules above, a request to `test.de` (or `www.test.de`) is handed to
 > migrated to the opt-in form (host and port are kept, the domain list starts empty)
 > the next time the upstream settings are saved.
 
+### A Second Upstream Proxy (Hidden from the GUI)
+
+The GUI manages exactly one upstream proxy, and it rewrites everything between
+the `# UPSTREAM_START` / `# UPSTREAM_END` markers whenever the upstream proxy or
+its domain list is saved. Rules you want to keep by hand - a second proxy for a
+different set of domains, for instance - go into the hidden block instead:
+
+```conf
+# UPSTREAM_START
+# UPSTREAM_PROXY proxy.example.com:3128
+# Only these domains are routed through the upstream proxy
+upstream proxy.example.com:3128 "test.de"
+# UPSTREAM_END
+
+# UPSTREAM_HIDDEN_START
+upstream proxy2.example.com:3128 "test2.de"
+upstream proxy3.example.com:8080 "intranet.local"
+# UPSTREAM_HIDDEN_END
+```
+
+The GUI parses only the managed block, so the hidden rules never show up in the
+"Upstream Proxy" / "Upstream Domains" sections and survive every save. Tinyproxy
+reads both blocks identically - same `upstream <host>:<port> "<domain>"` syntax,
+any number of proxies.
+
+Points to watch:
+- Keep the hidden domains disjoint from the GUI-managed list; with overlapping
+  patterns it is not obvious which proxy wins.
+- The hidden block is not validated by the GUI. A typo here is a tinyproxy
+  config error, so check the container logs after restarting.
+- Restart Tinyproxy after editing (the GUI's restart button does it too).
+- Domain filtering is unaffected: a host still has to pass the allow/block list
+  before any upstream rule applies.
+
 ## Keycloak Login (optional)
 
 The GUI has **no authentication by default** — anyone who can reach it can
