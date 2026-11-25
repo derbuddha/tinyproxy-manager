@@ -110,16 +110,35 @@ function getNoiseFilters() {
 
 function isNoiseFiltered(array $entry, array $filters) {
     if (empty($filters)) return false;
+    // Only the request domain is matched - never the source/workspace name, so a filter
+    // can't accidentally hide a whole container's traffic (or drop it from the dropdowns).
     $domain = strtolower($entry['domain'] ?? '');
-    $source = strtolower($entry['source'] ?? '');
     foreach ($filters as $f) {
         $f = strtolower(trim($f));
         if ($f === '') continue;
-        if (($domain !== '' && strpos($domain, $f) !== false) || ($source !== '' && strpos($source, $f) !== false)) {
+        if (noiseFilterMatches($domain, $f)) {
             return true;
         }
     }
     return false;
+}
+
+// "Show only" domain search (per viewer, not stored): same matching rules as the noise
+// filter - substring, or a * / ? wildcard pattern against the whole domain.
+function matchesDomainSearch(array $entry, $search) {
+    $search = strtolower(trim((string)$search));
+    if ($search === '') return true;
+    return noiseFilterMatches(strtolower($entry['domain'] ?? ''), $search);
+}
+
+// Filters containing * or ? are glob patterns matched against the whole value
+// (e.g. "*key*", "telemetry.*"); anything else is a plain substring match.
+function noiseFilterMatches($value, $filter) {
+    if ($value === '') return false;
+    if (strpbrk($filter, '*?') !== false) {
+        return fnmatch($filter, $value, FNM_NOESCAPE);
+    }
+    return strpos($value, $filter) !== false;
 }
 
 function addNoiseFilter($value) {

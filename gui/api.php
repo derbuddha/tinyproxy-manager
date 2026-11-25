@@ -558,7 +558,7 @@ function deleteUpstreamDomain($entry) {
     return applyUpstreamChange($result, 'Domain removed from upstream routing');
 }
 
-function getTraffic($lines = 200, $container = '') {
+function getTraffic($lines = 200, $container = '', $search = '') {
     $logFile = '/var/log/tinyproxy/tinyproxy.log';
 
     if (!file_exists($logFile)) {
@@ -569,6 +569,11 @@ function getTraffic($lines = 200, $container = '') {
             'count' => 0
         ];
     }
+
+    // A "show only" search usually targets rare domains, so look further back in the log
+    // than the default window - otherwise matches would rarely be in the last 100 lines.
+    $search = trim((string)$search);
+    if ($search !== '') $lines = max(intval($lines), 20000);
 
     // Read last N lines of log file
     $logLines = [];
@@ -590,6 +595,9 @@ function getTraffic($lines = 200, $container = '') {
             continue;
         }
         if ($container !== '' && extractContainerLabel($entry['source'] ?? '') !== $container) {
+            continue;
+        }
+        if (!matchesDomainSearch($entry, $search)) {
             continue;
         }
         if (count($traffic) < 50) {
@@ -1021,7 +1029,8 @@ switch ($action) {
     case 'traffic':
         $lines = $data['lines'] ?? 100;
         $container = $data['container'] ?? '';
-        echo json_encode(getTraffic($lines, $container));
+        $search = $data['search'] ?? '';
+        echo json_encode(getTraffic($lines, $container, $search));
         break;
 
     case 'get_traffic_containers':

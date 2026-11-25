@@ -1334,6 +1334,17 @@ a.btn-restart, a.btn-sync-allow {
     transition: all 0.2s ease;
 }
 
+.container-select-row .domain-search-input {
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    background-color: var(--input-bg);
+    color: var(--text-primary);
+    min-width: 200px;
+}
+
+.container-select-row .domain-search-input:focus,
 .container-select-row select:focus {
     outline: none;
     border-color: var(--primary);

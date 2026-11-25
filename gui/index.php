@@ -111,10 +111,10 @@ authRequirePage();
                 </div>
                 <div id="noise-filter-panel" class="filter-panel" style="display: none;">
                     <p class="help-text" style="margin-bottom: 10px;">
-                        Hides matching domains/sources from this Live Monitor <strong>and</strong> the Full Log page, for every viewer. The stored traffic history and JSON export still keep every entry - this only affects what's displayed.
+                        Hides matching request domains from this Live Monitor <strong>and</strong> the Full Log page, for every viewer. The stored traffic history and JSON export still keep every entry - this only affects what's displayed. Plain text matches anywhere in the domain; use <code>*</code>/<code>?</code> wildcards for patterns (e.g. <code>telemetry.*</code>).
                     </p>
                     <div class="filter-input-row">
-                        <input type="text" id="noise-filter-input" placeholder="e.g. coder.example.com or 172.19.0.1" />
+                        <input type="text" id="noise-filter-input" placeholder="e.g. otel.cline.bot or *telemetry*" />
                         <button class="btn-add" onclick="addNoiseFilter()">Add</button>
                     </div>
                     <div id="noise-filter-list" class="filtered-domains-list">
@@ -129,6 +129,8 @@ authRequirePage();
                     <select id="live-container-select" onchange="onContainerFilterChange()">
                         <option value="">All containers</option>
                     </select>
+                    <label for="live-domain-search">Show only domains:</label>
+                    <input type="search" id="live-domain-search" class="domain-search-input" placeholder="e.g. netcup or *netcup*" oninput="onDomainSearchInput()" />
                     <button type="button" class="btn-blocked-filter" id="blocked-only-btn" aria-pressed="false" title="Show only blocked requests" onclick="toggleBlockedOnlyFilter()">BLOCKED</button>
                     <a href="#" class="btn-clear-filters" id="live-container-clear" style="display: none; text-decoration: none;" onclick="clearContainerFilter(); return false;">Clear</a>
                 </form>
@@ -389,6 +391,8 @@ authRequirePage();
         let domainFilters = []; // Store filtered domains
         let trafficContainerFilter = ''; // Selected workspace/container (server-side filtered)
         let blockedOnlyFilter = false;   // Show only BLOCKED entries in the Live Monitor
+        let trafficDomainSearch = '';    // "Show only domains" search (server-side filtered)
+        let domainSearchTimer = null;
 
         // Notification system
         function showNotification(message, type = 'success') {
@@ -550,15 +554,31 @@ authRequirePage();
 
         function onContainerFilterChange() {
             trafficContainerFilter = document.getElementById('live-container-select').value;
-            document.getElementById('live-container-clear').style.display = trafficContainerFilter ? 'inline-block' : 'none';
+            updateClearButton();
             refreshTraffic();
+        }
+
+        function onDomainSearchInput() {
+            clearTimeout(domainSearchTimer);
+            domainSearchTimer = setTimeout(() => {
+                trafficDomainSearch = document.getElementById('live-domain-search').value.trim();
+                updateClearButton();
+                refreshTraffic();
+            }, 300);
+        }
+
+        function updateClearButton() {
+            document.getElementById('live-container-clear').style.display =
+                (trafficContainerFilter || trafficDomainSearch) ? 'inline-block' : 'none';
         }
 
         function clearContainerFilter() {
             trafficContainerFilter = '';
+            trafficDomainSearch = '';
             document.getElementById('live-container-select').value = '';
+            document.getElementById('live-domain-search').value = '';
             SearchableSelect.sync('live-container-select');
-            document.getElementById('live-container-clear').style.display = 'none';
+            updateClearButton();
             refreshTraffic();
         }
 
@@ -645,6 +665,7 @@ authRequirePage();
                     input.value = '';
                     showNotification('✓ Noise filter added', 'success');
                     loadNoiseFilters();
+                    loadTrafficContainers();
                     refreshTraffic();
                 } else {
                     showNotification('✗ ' + result.message, 'error');
@@ -667,6 +688,7 @@ authRequirePage();
                 if (result.success) {
                     showNotification('✓ Noise filter removed', 'success');
                     loadNoiseFilters();
+                    loadTrafficContainers();
                     refreshTraffic();
                 } else {
                     showNotification('✗ ' + result.message, 'error');
@@ -1058,7 +1080,7 @@ authRequirePage();
                 const response = await fetch('api.php', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({action: 'traffic', lines: 100, container: trafficContainerFilter})
+                    body: JSON.stringify({action: 'traffic', lines: 100, container: trafficContainerFilter, search: trafficDomainSearch})
                 });
                 const result = await safeJsonParse(response);
                 
@@ -1070,7 +1092,9 @@ authRequirePage();
                 }
                 
                 if (result.traffic.length === 0) {
-                    trafficList.innerHTML = trafficContainerFilter
+                    trafficList.innerHTML = trafficDomainSearch
+                        ? '<p class="no-traffic">No recent requests to domains matching "' + escapeHtml(trafficDomainSearch) + '". Older matches are on the Full Log page.</p>'
+                        : trafficContainerFilter
                         ? '<p class="no-traffic">No traffic recorded yet for "' + escapeHtml(trafficContainerFilter) + '".</p>'
                         : '<p class="no-traffic">No traffic recorded yet. Use the proxy to see traffic.</p>';
                     return;
@@ -1097,6 +1121,9 @@ authRequirePage();
                     (blockedOnlyFilter ? 'Blocked requests shown' : 'Requests shown');
                 if (hiddenCount > 0) {
                     html += ' <span class="filtered-count">(' + hiddenCount + ' filtered out)</span>';
+                }
+                if (trafficDomainSearch) {
+                    html += ' <span class="filtered-count">· domains matching "' + escapeHtml(trafficDomainSearch) + '"</span>';
                 }
                 if (result.hidden_by_noise_filter > 0) {
                     html += ' <span class="filtered-count">· 🔇 ' + result.hidden_by_noise_filter + ' hidden by noise filter</span>';

@@ -38,6 +38,14 @@ if ($selectedContainer !== '') {
     }));
 }
 
+// "Show only domains" search (substring or * / ? wildcard pattern)
+$domainSearch = isset($_GET['q']) ? trim((string)$_GET['q']) : '';
+if ($domainSearch !== '') {
+    $visibleHistory = array_values(array_filter($visibleHistory, function ($entry) use ($domainSearch) {
+        return matchesDomainSearch($entry, $domainSearch);
+    }));
+}
+
 $total = count($visibleHistory);
 $perPageOptions = [20, 50, 100, 1000, 'all'];
 $perPageParam = isset($_GET['per_page']) ? trim((string)$_GET['per_page']) : '100';
@@ -49,7 +57,8 @@ $totalPages = max(1, (int)ceil($total / $perPage));
 $page = isset($_GET['page']) ? max(1, min($totalPages, (int)$_GET['page'])) : 1;
 $offset = ($page - 1) * $perPage;
 $pageItems = array_slice($visibleHistory, $offset, $perPage);
-$containerQS = $selectedContainer !== '' ? '&container=' . urlencode($selectedContainer) : '';
+$containerQS = ($selectedContainer !== '' ? '&container=' . urlencode($selectedContainer) : '')
+    . ($domainSearch !== '' ? '&q=' . urlencode($domainSearch) : '');
 $perPageQS = '&per_page=' . urlencode($perPageParam);
 
 function h($s) {
@@ -103,10 +112,10 @@ function h($s) {
                 </div>
                 <div id="noise-filter-panel" class="filter-panel" style="display: none;">
                     <p class="help-text" style="margin-bottom: 10px;">
-                        Hides matching domains/sources from this page <strong>and</strong> the dashboard's Live Monitor, for every viewer. Matches the request domain or the source IP/name (substring, case-insensitive). The stored history and JSON export still keep every entry.
+                        Hides matching request domains from this page <strong>and</strong> the dashboard's Live Monitor, for every viewer. Matches the request domain only (case-insensitive substring, or a <code>*</code>/<code>?</code> wildcard pattern such as <code>telemetry.*</code>). The stored history and JSON export still keep every entry.
                     </p>
                     <div class="filter-input-row">
-                        <input type="text" id="noise-filter-input" placeholder="e.g. coder.example.com or 172.19.0.1" />
+                        <input type="text" id="noise-filter-input" placeholder="e.g. otel.cline.bot or *telemetry*" />
                         <button class="btn-add" onclick="addNoiseFilter()">Add</button>
                     </div>
                     <div id="noise-filter-list" class="filtered-domains-list">
@@ -125,6 +134,9 @@ function h($s) {
                         <?php endforeach; ?>
                     </select>
 
+                    <label for="domain-search" style="margin-left: 16px;">Show only domains:</label>
+                    <input type="search" name="q" id="domain-search" class="domain-search-input" placeholder="e.g. netcup or *netcup*" value="<?php echo h($domainSearch); ?>" />
+
                     <label for="per-page-select" style="margin-left: 16px;">Show:</label>
                     <select name="per_page" id="per-page-select" onchange="this.form.submit()">
                         <?php foreach ($perPageOptions as $opt): ?>
@@ -134,7 +146,7 @@ function h($s) {
                         <?php endforeach; ?>
                     </select>
 
-                    <?php if ($selectedContainer !== ''): ?>
+                    <?php if ($selectedContainer !== '' || $domainSearch !== ''): ?>
                         <a href="history.php" class="btn-clear-filters" style="text-decoration: none; display: inline-block;">Clear</a>
                     <?php endif; ?>
                 </form>
@@ -148,6 +160,9 @@ function h($s) {
                 <?php endif; ?>
                 <?php if ($selectedContainer !== ''): ?>
                     <span class="filtered-count">· filtered to <?php echo h($selectedContainer); ?></span>
+                <?php endif; ?>
+                <?php if ($domainSearch !== ''): ?>
+                    <span class="filtered-count">· domains matching "<?php echo h($domainSearch); ?>"</span>
                 <?php endif; ?>
                 — showing page <?php echo $page; ?> of <?php echo $totalPages; ?> (<?php echo $total; ?> visible)
             </div>
